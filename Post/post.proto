@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+service PostService {
+    rpc getProfile (Username) returns (ProfileInfo) {}
+
+    rpc getPost (PostParams) returns (PostInfo) {}
+}
+
+message Username {
+    string username = 1;
+}
+
+message ProfileInfo {
+    string username = 1;
+    string name = 2;
+    string profilePicture = 3;
+    int32 postQuantity = 4;
+}
+
+message PostParams {
+    string username = 1;
+    int32 postN = 2;
+}
+
+message PostInfo {
+    string username = 1;
+    string photo = 2;
+    string text = 3;
+}

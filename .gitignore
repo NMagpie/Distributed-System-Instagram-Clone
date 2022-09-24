@@ -1,0 +1,14 @@
+AuthService/target
+AuthService/.idea
+AuthService/.bsp
+
+Gateway/target
+Gateway/.idea
+Gateway/.bsp
+
+Cache/target
+Cache/.idea
+Cache/.bsp
+
+Post/node_modules
+Post/public
