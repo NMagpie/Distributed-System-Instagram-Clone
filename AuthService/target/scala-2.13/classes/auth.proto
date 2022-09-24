@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package authentication;
+
+service AuthenticationService {
+  rpc isAuth (AuthKey) returns (AuthBool) {}
+
+  rpc auth (UserData) returns (Result) {}
+
+  rpc register (UserData) returns (Result) {}
+}
+
+message AuthKey {
+  string key = 1;
+}
+
+message AuthBool {
+  bool auth = 1;
+}
+
+message UserData {
+  string encode = 1;
+}
+
+message Result {
+  optional string key = 2;
+  optional string error = 3;
+}

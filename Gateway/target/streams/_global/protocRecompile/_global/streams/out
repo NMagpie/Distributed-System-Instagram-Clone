@@ -1,0 +1,3 @@
+[info] Generating Akka gRPC service interface for authentication.AuthenticationService
+[info] Generating Akka gRPC client for authentication.AuthenticationService
+[info] Generating Akka gRPC service handler for authentication.AuthenticationService

@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package general;
+
+service General {
+  rpc status (StatusParams) returns (Status) {}
+}
+
+message StatusParams {}
+
+message Status {
+  string message = 1;
+}
