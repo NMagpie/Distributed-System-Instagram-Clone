@@ -3,7 +3,11 @@ syntax = "proto3";
 service PostService {
     rpc getProfile (Username) returns (ProfileInfo) {}
 
-    rpc getPost (PostParams) returns (PostInfo) {}
+    rpc getPost (PostParams) returns (PostArray) {}
+
+    rpc getStatus (Empty) returns (Status) {}
+
+    rpc putPost (PostPutInfo) returns (PostPutResult) {}
 }
 
 message Username {
@@ -14,16 +18,36 @@ message ProfileInfo {
     string username = 1;
     string name = 2;
     string profilePicture = 3;
-    int32 postQuantity = 4;
 }
 
 message PostParams {
     string username = 1;
-    int32 postN = 2;
+    int32 dozen = 2;
+}
+
+message PostArray {
+    repeated PostInfo postInfo = 1;
 }
 
 message PostInfo {
     string username = 1;
     string photo = 2;
     string text = 3;
+}
+
+message Empty {}
+
+message Status {
+    string message = 1;
+}
+
+message PostPutInfo {
+    string key = 1;
+    bytes photo = 2;
+    string text = 3;
+}
+
+message PostPutResult {
+    bool success = 1;
+    optional string error = 2;
 }

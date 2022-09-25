@@ -24,11 +24,13 @@ object Main {
 
   implicit val executionContext = system.executionContext
 
+  val hostname = ConfigFactory.load.getString("hostname")
+
+  val port = ConfigFactory.load.getInt("port")
+
+  val sType = ConfigFactory.load.getString("sType")
+
   def main(args: Array[String]): Unit = {
-
-    val hostname = ConfigFactory.load.getString("hostname")
-
-    val port = ConfigFactory.load.getInt("port")
 
     val bindServer = Http().newServerAt(hostname, port).bind(AuthenticationServiceHandler(new RpcImpl))
 

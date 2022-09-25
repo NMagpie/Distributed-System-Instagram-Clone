@@ -59,4 +59,20 @@ class RpcImpl extends AuthenticationService {
 
   }
 
+  override def getStatus(in: Empty): Future[Status] = {
+    val status = s"Server Type: ${main.Main.sType}\nHostname: ${main.Main.hostname}\nPort: ${main.Main.port}"
+    Future(Status(status))
+  }
+
+  override def whoIsThis(in: AuthKey): Future[User] = {
+    val statement = connection.createStatement
+    val rs = statement.executeQuery("SELECT username FROM auth_db.users WHERE users.key ='%s'".format(in.key))
+
+    if (rs.next) {
+      Future(User(rs.getString(1)))
+    } else {
+      Future(User("null"))
+    }
+  }
+
 }
