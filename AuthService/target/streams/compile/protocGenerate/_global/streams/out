@@ -1,5 +1,0 @@
-[debug] Invalidating cache (input changed)
-[info] Compiling 2 protobuf files to D:\things\UTM\4Y\PAD\Lab1\AuthService\target\scala-2.13\akka-grpc\main
-[debug] protoc options:
-[debug] Compiling schema D:\things\UTM\4Y\PAD\Lab1\AuthService\src\main\protobuf\auth.proto
-[debug] Compiling schema D:\things\UTM\4Y\PAD\Lab1\AuthService\src\main\protobuf\general.proto
