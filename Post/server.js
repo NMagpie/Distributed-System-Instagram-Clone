@@ -1,5 +1,7 @@
 require('dotenv').config();
 
+//const crypto = require('crypto');
+
 const hostname = process.env.HOSTNAME;
 const port = process.env.PORT;
 
@@ -8,7 +10,11 @@ const dbUser = process.env.DBUSER;
 const dbPassword = process.env.DBPASSWORD;
 const database = process.env.DB;
 
+const promisify = require("./util");
+
 const authClient = require("./authProto");
+
+const fs = require('fs');
 
 var express = require('express');
 var app = express();
@@ -46,6 +52,7 @@ var packageDef = protoLoader.loadSync(PROTO_PATH, loaderOptions);
 const postServer = new grpc.Server();
 
 const grpcObj = grpc.loadPackageDefinition(packageDef);
+
 postServer.addService(grpcObj.PostService.service, {
     getProfile: getProfile,
     getPost: getPost,
@@ -101,6 +108,10 @@ function putPost(postInfo, callback) {
 
     const photo = postInfo.request.photo;
 
+    //const filename = crypto.createHash('sha256').update( key.slice(0,10) + text).digest('hex') + Date.now();
+
+    //fs.writeFile(filename,photo);
+
     const text = postInfo.request.text;
 
     whoIsThis({key: key})
@@ -126,18 +137,6 @@ function putPost(postInfo, callback) {
         })
     .catch(error => {console.error(error)});
 
-}
-
-function promisify(fn) {
-    return function(...args) {
-        return new Promise((resolve, reject) => {
-            fn(...args, (error, data) => {
-                if (error) return reject(error);
-
-                resolve(data);
-            });
-        });
-    };
 }
 
 const query = promisify(con.query.bind(con));

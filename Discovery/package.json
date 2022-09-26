@@ -1,0 +1,17 @@
+{
+  "name": "discovery",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "NMagpie",
+  "license": "ISC",
+  "dependencies": {
+    "@grpc/grpc-js": "^1.7.1",
+    "@grpc/proto-loader": "^0.7.3",
+    "dotenv": "^16.0.2",
+    "mongodb": "4.10"
+  }
+}

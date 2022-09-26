@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+service DiscoveryService {
+    rpc discover(ServiceInfo) returns (Empty) {}
+
+    rpc getStatus (Empty) returns (Status) {}
+
+    rpc removeService(ServiceInfo) returns (Empty) {}
+}
+
+message Empty {}
+
+message ServiceInfo {
+    string type = 1;
+    string hostname = 2;
+    int32 port = 3;
+}
+
+message Status {
+    string message = 1;
+}

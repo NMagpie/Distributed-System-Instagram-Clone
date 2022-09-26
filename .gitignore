@@ -1,14 +1,35 @@
-AuthService/target
-AuthService/.idea
-AuthService/.bsp
+# bloop and metals
+.bloop
+.bsp
 
-Gateway/target
-Gateway/.idea
-Gateway/.bsp
+# metals
+**/project/metals.sbt
+.metals
 
-Cache/target
-Cache/.idea
-Cache/.bsp
+# scala 3
+.tasty
 
-Post/node_modules
-Post/public
+# sbt
+**/project/project/
+**/project/target/
+**/target
+
+# intellij idea
+*.log
+*.iml
+*.ipr
+*.iws
+.idea
+
+# other?
+.history
+.scala_dependencies
+.cache-main
+
+# general
+*.class
+
+# Node.js
+
+**/node_modules
+**/public
