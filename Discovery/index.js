@@ -4,6 +4,8 @@ const promisify = require("./util").promisify;
 
 const database = require("./db");
 
+const serviceConstructors = require("./proto");
+
 const services = {
     gateway: [],
     auth: [],
@@ -22,6 +24,16 @@ const initialServices = async () => {
     const cursor = DBservices.find({}, options);
 
     cursor.forEach((service) => {
+
+        const constructor = constructByType.get(service.type);
+
+        service.client = new constructor(
+            service.hostname+":"+service.port,
+            grpc.credentials.createInsecure()
+        );
+
+        service.load = 0;
+
         services[service.type].push(service);
     });
 }
@@ -33,7 +45,7 @@ const port = process.env.PORT;
 
 const grpc = require("@grpc/grpc-js");
 const protoLoader = require("@grpc/proto-loader");
-const PROTO_PATH = "./discovery.proto";
+const PROTO_PATH = "./proto/discovery.proto";
 
 const loaderOptions = {
     keepCase: true,
@@ -48,17 +60,21 @@ var packageDef = protoLoader.loadSync(PROTO_PATH, loaderOptions);
 const postServer = new grpc.Server();
 
 const grpcObj = grpc.loadPackageDefinition(packageDef);
-postServer.addService(grpcObj.DiscoveryService.service, {
+
+postServer.addService(grpcObj.discovery.DiscoveryService.service, {
     getStatus: getStatus,
     discover: discover,
     removeService: removeService,
+    sendMessage: sendMessage,
+    putPicture: putPicture,
 });
 
 postServer.bindAsync(
     `${hostname}:${port}`,
     grpc.ServerCredentials.createInsecure(),
     (error, port) => {
-        console.log(`Server running at ${hostname}:${port}`);
+        console.log("[ " + getCurrentTime() + " ]:\t" + `Server running at ${hostname}:${port}`);
+
         postServer.start();
     }
 );
@@ -88,19 +104,35 @@ function discover(serviceInfo, callback) {
             const DBservices = database.collection('services');
         
             const result = await DBservices.insertOne(service);
-        
-            console.log(`Service was added: ${result.acknowledged}`);
+
+            console.log("[ " + getCurrentTime() + " ]:\t"
+            + `Service ${service.type}:${service.hostname}:${service.port} was added: ${result.acknowledged}`);
+
+            const constructor = constructByType.get(service.type);
+
+            service.client = new constructor(
+                service.hostname+":"+service.port,
+                grpc.credentials.createInsecure()
+            );
+
+            service.load = 0;
         
             services[service.type].push(service);
         
             callback(null, {});
         })()
     } else {
-        console.log('Such service type does not exist, or this object already exists in the database!');
+        console.log("[ " + getCurrentTime() + " ]:\tSuch service type does not exist, or this object already exists in the database!");
 
         callback(null, {});
     }
 }
+
+const constructByType = new Map([
+    [ 'gateway', serviceConstructors.GatewayService ],
+    [ 'auth', serviceConstructors.AuthenticationService ],
+    [ 'post', serviceConstructors.PostService ],
+]);
 
 function removeService(serviceInfo, callback) {
 
@@ -111,7 +143,7 @@ function removeService(serviceInfo, callback) {
     
         const result = await DBservices.deleteOne(service);
     
-        console.log(`Service was removed: ${result.acknowledged}`);
+        console.log("[ " + getCurrentTime() + " ]:\t" + `Service was removed: ${result.acknowledged}`);
     
         services[service.type] = services[service.type].filter((selectedService) => {
             return (selectedService.type != service.type && selectedService.hostname != service.hostname && selectedService != service.port);
@@ -120,4 +152,95 @@ function removeService(serviceInfo, callback) {
         callback(null, {});
     })()
 
+}
+
+const messageTypes = new Map([
+    [ 'isAuth', 'auth' ],     //Auth
+    [ 'auth', 'auth' ],
+    [ 'register', 'auth' ],
+    [ 'whoIsThis', 'auth' ],
+
+    [ 'getProfile', 'post' ], //PostService
+    [ 'getPost', 'post' ],
+    [ 'putPost', 'post' ],  
+    [ 'putProfile', 'post' ],
+    ]);
+
+    const minLoadService = (sType) => {
+        return services[sType].reduce((prev, curr) => {
+            return prev.load < curr.load ? prev : curr;
+        });
+    }
+
+function sendMessage(message, callback) {
+    const {method, body} = message.request;
+
+    console.log("[ " + getCurrentTime() + " ]: {" + method + "}\t" + body);
+
+    if (method === "getStatus") {
+        const {sType, hostname, port} = body.split(":");
+
+        const service = services[sType].filter((service) => {
+            return ( service.hostname === hostname && service.port === port )
+        })
+
+        service.client.getStatus({}, (error, result) => {
+            if (error)
+                callback(null, {success: false, body: error});
+
+            callback(null, {success: true, body: JSON.stringify(result)});
+        });
+
+    } else {
+
+        const sType = messageTypes.get(method);
+
+        const service = minLoadService(sType);
+
+        service.load++;
+
+        service.client[method](JSON.parse(body), (error, result) => {
+
+        service.load--;
+
+        if (error) 
+            callback(null, {success: false, body: error});
+
+        callback(null, {success: true, body: JSON.stringify(result)});
+
+        });
+
+    }
+}
+
+function putPicture(call, callback) {
+
+    console.log("[ " + getCurrentTime() + " ]: {" + putPicture + "}");
+
+    const post = minLoadService('post');
+
+    const callPost = post.client.putPicture(function(error, response) {
+        if (error)
+            callback(null, {success: response.success, error: error});
+
+        callback(null, {success: response.success, link: response.link});
+    });
+
+    call.on('data', function(dataStream) {
+
+        if (dataStream.fileType) {
+                callPost.write({fileType: dataStream.fileType});
+                callPost.end();
+        } else
+            callPost.write({chunk: dataStream.chunk});
+
+    });
+
+    call.on('end', function() {})
+}
+
+function getCurrentTime() {
+    const now = new Date();
+
+    return now.getHours() + ":" + now.getMinutes() + ":" + now.getSeconds();
 }
