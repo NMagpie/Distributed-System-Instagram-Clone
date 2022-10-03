@@ -1,19 +1,30 @@
 package main
 
+import akka.NotUsed
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.Behaviors
-import akka.dispatch.Futures.future
 import akka.grpc.GrpcClientSettings
 import akka.http.scaladsl.Http
+import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
-
-import java.nio.charset.StandardCharsets
-import java.util.Base64
-import scala.io.StdIn
-import scala.util.{Failure, Success}
-import authentication._
+import akka.http.scaladsl.server.Route
+import akka.stream.Materializer
+import akka.stream.scaladsl.{Flow, Framing, Source}
+import akka.util.ByteString
 import com.typesafe.config.ConfigFactory
+import discovery._
+import gateway._
+import rpcImpl.RpcImpl
+import scalapb.GeneratedMessage
+import spray.json.{DefaultJsonProtocol, RootJsonFormat}
+import com.google.protobuf.{ByteString => pByteString}
+
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, ExecutionContextExecutor, Future}
+import scala.io.StdIn
+import scala.language.postfixOps
+import scala.util.{Failure, Success}
 
 /*
 
@@ -23,50 +34,111 @@ import com.typesafe.config.ConfigFactory
 
  */
 
+case class Post(photo: Array[Byte], fileType: String, text: String)
+
+object PostJsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
+  implicit val PortofolioFormats: RootJsonFormat[Post] = jsonFormat3(Post)
+}
+
 object Main {
 
-  implicit val system = ActorSystem(Behaviors.empty, "my-system")
+  import PostJsonSupport._
 
-  implicit val executionContext = system.executionContext
+  //implicit def json4sJacksonFormats: Formats = jackson.Serialization.formats(NoTypeHints)
+
+  implicit val system: ActorSystem[Nothing] = ActorSystem(Behaviors.empty, "my-system")
+
+  implicit val executionContext: ExecutionContextExecutor = system.executionContext
+
+  val hostname: String = ConfigFactory.load.getString("hostname")
+
+  val httpPort: Int = ConfigFactory.load.getInt("httpPort")
+
+  val grpcPort: Int = ConfigFactory.load.getInt("grpcPort")
+
+  val discoveryHost: String = ConfigFactory.load.getString("discoveryHost")
+
+  val discoveryPort: Int = ConfigFactory.load.getInt("discoveryPort")
+
+  val clientSettings: GrpcClientSettings = GrpcClientSettings.connectToServiceAt(discoveryHost, discoveryPort).withTls(false)
+
+  val client: DiscoveryService = DiscoveryServiceClient(clientSettings)
 
   def main(args: Array[String]): Unit = {
 
-    val hostname = ConfigFactory.load.getString("hostname")
+    Await.ready(client.discover(ServiceInfo("gateway", hostname, grpcPort)), Duration.create(15, "min"))
 
-    val port = ConfigFactory.load.getInt("port")
-
-    val clientSettings = GrpcClientSettings.connectToServiceAt("127.0.0.1", 9001).withTls(false)
-
-    val client: AuthenticationService = AuthenticationServiceClient(clientSettings)
+    val bindServer = Http().newServerAt(hostname, grpcPort).bind(GatewayServiceHandler(new RpcImpl))
 
     val route = {
+
+      extractRequestContext { ctx =>
+        implicit val materializer: Materializer = ctx.materializer
 
       path("register") {
         headerValueByName("Authorization") {
           authData =>
-            val reply = client.register(UserData(authData))
-            onComplete(reply) {
-              case Success(replyResult) => println("Reply sent")
-                complete(HttpEntity(ContentTypes.`application/json`, replyResult.toProtoString))
-              case Failure(e) => e.printStackTrace()
-                complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
-            }
+            val request = s"{\"encode\": \"$authData\"}"
+            val reply = client.sendMessage(Message("register", request))
+            response(reply)
         }
       } ~ path("login") {
         headerValueByName("Authorization") {
           authData =>
-            val reply = client.auth(UserData(authData))
-            onComplete(reply) {
-              case Success(replyResult) => println("Reply sent")
-                complete(HttpEntity(ContentTypes.`application/json`, replyResult.toProtoString))
-              case Failure(e) => e.printStackTrace()
-                complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
-            }
+            val request = s"{\"encode\": \"$authData\"}"
+            val reply = client.sendMessage(Message("auth", request))
+            response(reply)
+        }
+      } ~ pathPrefix("profile" / Segment / IntNumber ) {
+        case (username, dozen) =>
+          val request = s"{\"username\": \"$username\", \"dozen\": \"$dozen\"}"
+          val reply = client.sendMessage(Message("getPost", request))
+          response(reply)
+      } ~ path("profile" / Segment ) {
+          username =>
+            val request = s"{\"username\": \"$username\"}"
+            val reply = client.sendMessage(Message("getProfile", request))
+            response(reply)
+      } ~ post {
+        path("upload") {
+          headerValueByName("Key") {
+            key =>
+              formFields("text", "fileType") {
+                (text, fileType) =>
+                  fileUpload("photo") {
+                    case (metaData, file) =>
+
+                    val firstChunk = Flow[ByteString].map(i => PictureInfo(pByteString.copyFrom(i.toArray), Option(fileType)) )
+
+                    val otherChunk = Flow[ByteString].map( i => PictureInfo(pByteString.copyFrom(i.toArray), None))
+
+                   val eof = Flow[Seq[Byte]].map(i => PictureInfo(pByteString.copyFrom(i.toArray), Option(fileType)) )
+
+                      val photo = file.mapConcat(chunk => chunk.grouped(1024))
+                        .mapMaterializedValue(_ => NotUsed)
+                        .via(otherChunk)
+                        .concat(Source.single("1".getBytes().toSeq).via(eof))
+
+                  onComplete(client.putPicture(photo)) {
+
+                    case Success(result) =>
+                                            val request = s"{\"key\": \"$key\", \"photoUrl\": \"${result.link.get}\", " +
+                                              s"\"text\": \"$text\"}"
+                                            val reply = client.sendMessage(Message("putPost", request))
+                                            response(reply)
+
+                    case Failure(e) => e.printStackTrace()
+                      complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+                  }
+                }
+              }
+          }
         }
       }
     }
+    }
 
-    val bindingFuture = Http().newServerAt(hostname, port).bind(route)
+    val bindingFuture = Http().newServerAt(hostname, httpPort).bind(route)
 
     println(s"Server now online.\nPress RETURN to stop...")
     StdIn.readLine()
@@ -74,6 +146,16 @@ object Main {
       .flatMap(_.unbind())
       .onComplete(_ => system.terminate())
 
+  }
+  def response(reply: Future[GeneratedMessage]) : Route = {
+    onComplete(reply) {
+      case Success(replyResult) => println("Reply sent")
+        complete(HttpEntity(ContentTypes.`application/json`,
+          replyResult.toString
+        ))
+      case Failure(e) => e.printStackTrace()
+        complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+    }
   }
 
 }

@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package post;
+
 service PostService {
     rpc getProfile (Username) returns (ProfileInfo) {}
 
@@ -7,7 +9,11 @@ service PostService {
 
     rpc getStatus (Empty) returns (Status) {}
 
-    rpc putPost (PostPutInfo) returns (PostPutResult) {}
+    rpc putPost (PostPutInfo) returns (PutResult) {}
+
+    rpc putProfile (ProfilePutInfo) returns (PutResult) {}
+
+    rpc putPicture(stream PictureInfo) returns (PutResult) {}
 }
 
 message Username {
@@ -41,13 +47,25 @@ message Status {
     string message = 1;
 }
 
+message ProfilePutInfo {
+    string username = 1;
+    string name = 2;
+    string avatar = 3;
+}
+
 message PostPutInfo {
     string key = 1;
-    bytes photo = 2;
+    string photo = 2;
     string text = 3;
 }
 
-message PostPutResult {
+message PutResult {
     bool success = 1;
     optional string error = 2;
+    optional string link = 3;
+}
+
+message PictureInfo {
+    bytes chunk = 1;
+    optional string fileType = 2;
 }

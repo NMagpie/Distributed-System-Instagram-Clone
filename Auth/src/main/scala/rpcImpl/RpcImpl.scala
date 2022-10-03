@@ -3,8 +3,9 @@ package rpcImpl
 import authentication._
 
 import scala.concurrent.Future
-import main.Main.executionContext
+import main.Main.{client, executionContext}
 import db.DBConnector.connection
+import discovery.Message
 
 import java.nio.charset.StandardCharsets
 import java.util.Base64
@@ -24,6 +25,7 @@ class RpcImpl extends AuthenticationService {
   }
 
   override def auth(in: UserData): Future[Result] = {
+
     val Array(username, password) = new String(Base64.getDecoder.decode(in.encode), StandardCharsets.UTF_8).split(":")
     val statement = connection.createStatement
 
@@ -52,6 +54,9 @@ class RpcImpl extends AuthenticationService {
     } else {
       statement.execute("INSERT INTO `auth_db`.`users` (`username`, `password`) VALUES ('%s', '%s')".format(username, password))
       val rs = statement.executeQuery("SELECT auth_db.users.key FROM auth_db.users WHERE username = '%s'".format(username))
+
+      client.sendMessage(Message("putProfile", s"{\"username\": \"$username\", \"name\": \"$username\", \"avatar\": \"$username\"}"))
+
       rs.next
       println("User was not found, registering")
       Future(Result(Option(rs.getString("key")), None))
@@ -60,7 +65,7 @@ class RpcImpl extends AuthenticationService {
   }
 
   override def getStatus(in: Empty): Future[Status] = {
-    val status = s"Server Type: ${main.Main.sType}\nHostname: ${main.Main.hostname}\nPort: ${main.Main.port}"
+    val status = s"Server Type: Authentication\nHostname: ${main.Main.hostname}\nPort: ${main.Main.port}"
     Future(Status(status))
   }
 

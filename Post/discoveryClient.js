@@ -1,6 +1,10 @@
 const grpc = require("@grpc/grpc-js");
 var protoLoader = require("@grpc/proto-loader");
-const PROTO_PATH = "./auth.proto";
+const PROTO_PATH = "./proto/discovery.proto";
+
+const discoveryHost = process.env.DISCOVERY_HOST;
+
+const discoveryPort = process.env.DISCOVERY_PORT;
 
 const options = {
     keepCase: true,
@@ -9,12 +13,13 @@ const options = {
     defaults: true,
     oneofs: true,
 };
+
 var grpcObj = protoLoader.loadSync(PROTO_PATH, options);
 
-const AuthenticationService = grpc.loadPackageDefinition(grpcObj).authentication.AuthenticationService;
+const DiscoveryService = grpc.loadPackageDefinition(grpcObj).discovery.DiscoveryService;
 
-const client = new AuthenticationService(
-    "localhost:9001",
+const client = new DiscoveryService(
+    `${discoveryHost}:${discoveryPort}`,
     grpc.credentials.createInsecure()
 );
 
