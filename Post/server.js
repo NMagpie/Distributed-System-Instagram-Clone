@@ -80,7 +80,7 @@ postServer.bindAsync(
 
 function getProfile(username, callback) {
 
-    console.log("[ " + getCurrentTime() + " ]: {getProfile}\t" + profUsername);
+    console.log("[ " + getCurrentTime() + " ]: {getProfile}\t" + username.request.username);
 
     const profUsername = username.request.username;
 
@@ -94,7 +94,7 @@ function getProfile(username, callback) {
 
 function getPost(postParams, callback) {
 
-    console.log("[ " + getCurrentTime() + " ]: {getPost}\t" + postParams.request);
+    console.log("[ " + getCurrentTime() + " ]: {getPost}\t" + JSON.stringify(postParams.request));
 
     const {username, dozen} = postParams.request
 
@@ -119,7 +119,7 @@ function getStatus(empty, callback) {
 
 function putPost(postInfo, callback) {
 
-    console.log("[ " + getCurrentTime() + " ]: {putPost}\t" + postInfo.request);
+    console.log("[ " + getCurrentTime() + " ]: {putPost}\t" + JSON.stringify(postInfo.request));
 
     const key = postInfo.request.key;
 
@@ -154,15 +154,15 @@ function putPost(postInfo, callback) {
 
 function putProfile(profileInfo, callback) {
 
-    console.log("[ " + getCurrentTime() + " ]: {putProfile}\t" + profileInfo.request);
+    console.log("[ " + getCurrentTime() + " ]: {putProfile}\t" + JSON.stringify(profileInfo.request));
 
-    const username = profileInfo.username;
+    const username = profileInfo.request.username;
 
-    const name = profileInfo.name;
+    const name = profileInfo.request.name;
 
-    const avatar = profileInfo.avatar;
+    const avatar = profileInfo.request.avatar;
 
-    query(`INSERT INTO post_db.profiles (username, name, avatar) VALUES ('${username}', '${name}', '${avatar}')`)
+    query(`INSERT INTO post_db.profiles (username, name, profilePicture) VALUES ('${username}', '${name}', '${avatar}')`)
     .then((result) => {
         if (result?.error)
             callback(null, {success: false, error: result.error});

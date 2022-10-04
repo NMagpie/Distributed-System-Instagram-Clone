@@ -9,8 +9,7 @@ import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
-import akka.stream.Materializer
-import akka.stream.scaladsl.{Flow, Framing, Source}
+import akka.stream.scaladsl.{Flow, Source}
 import akka.util.ByteString
 import com.typesafe.config.ConfigFactory
 import discovery._
@@ -20,6 +19,10 @@ import scalapb.GeneratedMessage
 import spray.json.{DefaultJsonProtocol, RootJsonFormat}
 import com.google.protobuf.{ByteString => pByteString}
 
+import java.nio.charset.StandardCharsets
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Base64
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContextExecutor, Future}
 import scala.io.StdIn
@@ -34,17 +37,7 @@ import scala.util.{Failure, Success}
 
  */
 
-case class Post(photo: Array[Byte], fileType: String, text: String)
-
-object PostJsonSupport extends DefaultJsonProtocol with SprayJsonSupport {
-  implicit val PortofolioFormats: RootJsonFormat[Post] = jsonFormat3(Post)
-}
-
 object Main {
-
-  import PostJsonSupport._
-
-  //implicit def json4sJacksonFormats: Formats = jackson.Serialization.formats(NoTypeHints)
 
   implicit val system: ActorSystem[Nothing] = ActorSystem(Behaviors.empty, "my-system")
 
@@ -71,71 +64,7 @@ object Main {
     val bindServer = Http().newServerAt(hostname, grpcPort).bind(GatewayServiceHandler(new RpcImpl))
 
     val route = {
-
-      extractRequestContext { ctx =>
-        implicit val materializer: Materializer = ctx.materializer
-
-      path("register") {
-        headerValueByName("Authorization") {
-          authData =>
-            val request = s"{\"encode\": \"$authData\"}"
-            val reply = client.sendMessage(Message("register", request))
-            response(reply)
-        }
-      } ~ path("login") {
-        headerValueByName("Authorization") {
-          authData =>
-            val request = s"{\"encode\": \"$authData\"}"
-            val reply = client.sendMessage(Message("auth", request))
-            response(reply)
-        }
-      } ~ pathPrefix("profile" / Segment / IntNumber ) {
-        case (username, dozen) =>
-          val request = s"{\"username\": \"$username\", \"dozen\": \"$dozen\"}"
-          val reply = client.sendMessage(Message("getPost", request))
-          response(reply)
-      } ~ path("profile" / Segment ) {
-          username =>
-            val request = s"{\"username\": \"$username\"}"
-            val reply = client.sendMessage(Message("getProfile", request))
-            response(reply)
-      } ~ post {
-        path("upload") {
-          headerValueByName("Key") {
-            key =>
-              formFields("text", "fileType") {
-                (text, fileType) =>
-                  fileUpload("photo") {
-                    case (metaData, file) =>
-
-                    val firstChunk = Flow[ByteString].map(i => PictureInfo(pByteString.copyFrom(i.toArray), Option(fileType)) )
-
-                    val otherChunk = Flow[ByteString].map( i => PictureInfo(pByteString.copyFrom(i.toArray), None))
-
-                   val eof = Flow[Seq[Byte]].map(i => PictureInfo(pByteString.copyFrom(i.toArray), Option(fileType)) )
-
-                      val photo = file.mapConcat(chunk => chunk.grouped(1024))
-                        .mapMaterializedValue(_ => NotUsed)
-                        .via(otherChunk)
-                        .concat(Source.single("1".getBytes().toSeq).via(eof))
-
-                  onComplete(client.putPicture(photo)) {
-
-                    case Success(result) =>
-                                            val request = s"{\"key\": \"$key\", \"photoUrl\": \"${result.link.get}\", " +
-                                              s"\"text\": \"$text\"}"
-                                            val reply = client.sendMessage(Message("putPost", request))
-                                            response(reply)
-
-                    case Failure(e) => e.printStackTrace()
-                      complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
-                  }
-                }
-              }
-          }
-        }
-      }
-    }
+      register ~ login ~ getPosts ~ getProfile ~ putPost
     }
 
     val bindingFuture = Http().newServerAt(hostname, httpPort).bind(route)
@@ -147,7 +76,146 @@ object Main {
       .onComplete(_ => system.terminate())
 
   }
-  def response(reply: Future[GeneratedMessage]) : Route = {
+
+  val register: Route = post {
+
+    path("register") {
+      headerValueByName("Authorization") {
+        authData =>
+          val request = s"{\"encode\": \"$authData\"}"
+          val reply = client.sendMessage(Message("register", request))
+
+          val username = new String(Base64.getDecoder.decode(authData), StandardCharsets.UTF_8).split(':')(0)
+
+          println(s"[$getCurrentTime]: {register}\t$username")
+
+          onComplete(reply) {
+            case Success(replyResult) =>
+              if (replyResult.success) {
+
+                formFields("name") {
+                  name =>
+                    fileUpload("photo") {
+                      case (metaData, file) =>
+
+                        val fileType = "." + metaData.getContentType.mediaType.subType
+
+                        if (!checkFileType(fileType)) {
+                          val request = s"{\"username\": \"$username\", \"name\": \"$name\", " +
+                            s"\"avatar\": \"\"}"
+                          val reply = client.sendMessage(Message("putProfile", request))
+                          response(reply)
+                        }
+
+                        val otherChunk = Flow[ByteString].map(i => PictureInfo(pByteString.copyFrom(i.toArray), None))
+
+                        val eof = Flow[Seq[Byte]].map(i => PictureInfo(pByteString.copyFrom(i.toArray), Option(fileType)))
+
+                        val photo = file.mapConcat(chunk => chunk.grouped(1024))
+                          .mapMaterializedValue(_ => NotUsed)
+                          .via(otherChunk)
+                          .concat(Source.single("1".getBytes().toSeq).via(eof))
+
+                        onComplete(client.putPicture(photo)) {
+
+                          case Success(result) =>
+                            val request = s"{\"username\": \"$username\", \"name\": \"$name\", " +
+                              s"\"avatar\": \"${result.link.get}\"}"
+                            val reply = client.sendMessage(Message("putProfile", request))
+                            response(reply)
+
+                          case Failure(e) => e.printStackTrace()
+                            complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+                        }
+                    }
+                }
+              } else {
+                complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, replyResult.toString))
+              }
+
+            case Failure(e) => e.printStackTrace()
+              complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+          }
+      }
+    }
+  }
+
+  val login: Route = path("login") {
+    headerValueByName("Authorization") {
+      authData =>
+
+        println(s"[$getCurrentTime]: {login}\t$authData")
+
+        val request = s"{\"encode\": \"$authData\"}"
+        val reply = client.sendMessage(Message("auth", request))
+        response(reply)
+    }
+  }
+
+  val getPosts: Route = pathPrefix("profile" / Segment / IntNumber) {
+    case (username, dozen) =>
+
+      println(s"[$getCurrentTime]: {getPosts}\t$username\t$dozen")
+
+      val request = s"{\"username\": \"$username\", \"dozen\": \"$dozen\"}"
+      val reply = client.sendMessage(Message("getPost", request))
+      response(reply)
+  }
+
+  val getProfile: Route = path("profile" / Segment) {
+    username =>
+
+      println(s"[$getCurrentTime]: {getProfile}\t$username")
+
+      val request = s"{\"username\": \"$username\"}"
+      val reply = client.sendMessage(Message("getProfile", request))
+      response(reply)
+  }
+
+  val putPost: Route = post {
+    path("upload") {
+      headerValueByName("Key") {
+        key =>
+          formFields("text") {
+            text =>
+
+              println(s"[$getCurrentTime]: {putPost}\t$key\t$text")
+
+              fileUpload("photo") {
+                case (metaData, file) =>
+
+                  val fileType = "." + metaData.getContentType.mediaType.subType
+
+                  if (!checkFileType(fileType))
+                    complete("Image has to have only one of these file types: .png, .jpg, .jpeg")
+
+                  val otherChunk = Flow[ByteString].map(i => PictureInfo(pByteString.copyFrom(i.toArray), None))
+
+                  val eof = Flow[Seq[Byte]].map(i => PictureInfo(pByteString.copyFrom(i.toArray), Option(fileType)))
+
+                  val photo = file.mapConcat(chunk => chunk.grouped(1024))
+                    .mapMaterializedValue(_ => NotUsed)
+                    .via(otherChunk)
+                    .concat(Source.single("1".getBytes().toSeq).via(eof))
+
+                  onComplete(client.putPicture(photo)) {
+
+                    case Success(result) =>
+                      val request = s"{\"key\": \"$key\", \"photo\": \"${result.link.get}\", " +
+                        s"\"text\": \"$text\"}"
+                      val reply = client.sendMessage(Message("putPost", request))
+                      response(reply)
+
+                    case Failure(e) => e.printStackTrace()
+                      complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+                  }
+              }
+          }
+      }
+    }
+  }
+
+  def response(reply: Future[GeneratedMessage]): Route = {
     onComplete(reply) {
       case Success(replyResult) => println("Reply sent")
         complete(HttpEntity(ContentTypes.`application/json`,
@@ -156,6 +224,20 @@ object Main {
       case Failure(e) => e.printStackTrace()
         complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
     }
+  }
+
+  def checkFileType(fileType: String): Boolean = {
+    fileType match {
+      case ".png" => true
+      case ".jpg" => true
+      case ".jpeg" => true
+      case _ => false
+    }
+  }
+
+  def getCurrentTime: String = {
+    val timestamp = LocalDateTime.now()
+    DateTimeFormatter.ofPattern("HH:mm:ss").format(timestamp)
   }
 
 }

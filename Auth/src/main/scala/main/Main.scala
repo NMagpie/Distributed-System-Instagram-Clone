@@ -1,22 +1,20 @@
 package main
 
-import rpcImpl.RpcImpl
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.Behaviors
 import akka.grpc.GrpcClientSettings
 import akka.http.scaladsl.Http
 import authentication.AuthenticationServiceHandler
 import com.typesafe.config.ConfigFactory
-
-import scala.io.StdIn
 import db.DBConnector
-
-import scala.concurrent.{Await, ExecutionContextExecutor}
 import discovery._
+import rpcImpl.RpcImpl
 
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import scala.concurrent.duration.Duration
-
-import db.DBConnector
+import scala.concurrent.{Await, ExecutionContextExecutor}
+import scala.io.StdIn
 
 /*
 
@@ -58,6 +56,11 @@ object Main {
         DBConnector.closeConnection()
         system.terminate()
       })
+  }
+
+  def getCurrentTime: String = {
+    val timestamp = LocalDateTime.now()
+    DateTimeFormatter.ofPattern("HH:mm:ss").format(timestamp)
   }
 
 }
