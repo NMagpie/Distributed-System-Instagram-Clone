@@ -46,7 +46,7 @@ object Main {
 
   def main(args: Array[String]): Unit = {
 
-      val bindServer = Http().newServerAt(hostname, port).bind(AuthenticationServiceHandler(new RpcImpl))
+    val bindServer = Http().newServerAt(hostname, port).bind(AuthenticationServiceHandler(new RpcImpl))
 
     println(s"Server now online.\nPress RETURN to stop...")
     StdIn.readLine()

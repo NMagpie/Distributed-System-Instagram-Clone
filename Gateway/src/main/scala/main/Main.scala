@@ -64,7 +64,7 @@ object Main {
     val bindServer = Http().newServerAt(hostname, grpcPort).bind(GatewayServiceHandler(new RpcImpl))
 
     val route = {
-      register ~ login ~ getPosts ~ getProfile ~ putPost
+      register ~ login ~ getPosts ~ getProfile ~ putPost ~ getStatus
     }
 
     val bindingFuture = Http().newServerAt(hostname, httpPort).bind(route)
@@ -72,6 +72,10 @@ object Main {
     println(s"Server now online.\nPress RETURN to stop...")
     StdIn.readLine()
     bindingFuture
+      .flatMap(_.unbind())
+      .onComplete(_ => system.terminate())
+
+    bindServer
       .flatMap(_.unbind())
       .onComplete(_ => system.terminate())
 
@@ -214,6 +218,17 @@ object Main {
       }
     }
   }
+
+  val getStatus: Route = path("status") {
+      formFields("service") {
+        service =>
+          println(s"[$getCurrentTime]: {getStatus}\t$service")
+
+          val reply = client.sendMessage(Message("getStatus", service))
+
+          response(reply)
+      }
+    }
 
   def response(reply: Future[GeneratedMessage]): Route = {
     onComplete(reply) {

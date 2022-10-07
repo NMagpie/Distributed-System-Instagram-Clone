@@ -20,4 +20,4 @@ eventTypes.forEach((eventType) => {
         client.close();
         process.exit(1);
     });
-  });
+});

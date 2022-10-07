@@ -84,11 +84,17 @@ function getProfile(username, callback) {
 
     const profUsername = username.request.username;
 
-    query(`SELECT username, name, profilePicture FROM post_db.profiles WHERE username = \'${profUsername}\'`)
-    .then((result, _) => {
-        callback(null, result[0]);
-    })
-    .catch(error => console.error(error));
+    //example if service is sending the result for too long
+
+    //new Promise(resolve => setTimeout(resolve, 1_000)).then(() => {
+
+        query(`SELECT username, name, profilePicture FROM post_db.profiles WHERE username = \'${profUsername}\'`)
+        .then((result, _) => {
+            callback(null, result[0]);
+        })
+        .catch(error => console.error(error));
+
+    //})
 
 }
 
@@ -102,7 +108,9 @@ function getPost(postParams, callback) {
     .then((result, _) => {
         callback(null, {postInfo: result,});
     })
-    .catch(error => console.error(error));
+    .catch(error => {
+        console.error(error);
+    });
 
 }
 
@@ -130,6 +138,7 @@ function putPost(postInfo, callback) {
     sendMessage({method: "whoIsThis", body: JSON.stringify({key: key})})
     .then(response => {
         const username = JSON.parse(response.body).username;
+
         if (username == 'null') {
 
             console.log("[ " + getCurrentTime() + " ]:\tUser data was rejected.");
@@ -148,7 +157,10 @@ function putPost(postInfo, callback) {
         else
             callback( null, {success: true,})
         })
-    .catch(error => {console.error(error)});
+    .catch(error => {
+        console.error(error);
+        callback(null, {success: false, error: error})
+    });
 
 }
 
@@ -165,11 +177,14 @@ function putProfile(profileInfo, callback) {
     query(`INSERT INTO post_db.profiles (username, name, profilePicture) VALUES ('${username}', '${name}', '${avatar}')`)
     .then((result) => {
         if (result?.error)
-            callback(null, {success: false, error: result.error});
+            callback(null, {success: false, body: result.error});
         else
             callback( null, {success: true,})
         })
-    .catch(error => {console.error(error)});
+    .catch(error => {
+        console.error(error);
+        callback(null, {success: false, body: error})
+    });
 }
 
 function putPicture(call, callback) {
@@ -199,6 +214,7 @@ function putPicture(call, callback) {
             if (error) {
                 console.log(error);
                 callback(null, {success: false, error: error});
+                return;
             }
 
             callback(null, {success: true, link: `http://${hostname}:${httpPort}/images/${filename}`});

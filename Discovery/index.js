@@ -11,7 +11,7 @@ const services = {
     auth: [],
     cache: [],
     post: [],
-    message: [],
+    discovery: [],
 }
 
 const initialServices = async () => {
@@ -29,7 +29,18 @@ const initialServices = async () => {
 
         service.client = new constructor(
             service.hostname+":"+service.port,
-            grpc.credentials.createInsecure()
+            grpc.credentials.createInsecure(),
+            // {
+            //         "timeout":"14.0s",
+            //         "waitForReady": true,
+            //         "retryPolicy": {
+            //             "MaxAttempts": 10,
+            //             "InitialBackoff": ".5s",
+            //             "MaxBackoff": "10s",
+            //             "BackoffMultiplier": 1.5,
+            //             "RetryableStatusCodes": [ "UNAVAILABLE", "UNKNOWN" ]
+            //         },
+            //     },
         );
 
         service.load = 0;
@@ -57,35 +68,29 @@ const loaderOptions = {
 
 var packageDef = protoLoader.loadSync(PROTO_PATH, loaderOptions);
 
-const postServer = new grpc.Server();
+const discServer = new grpc.Server();
 
 const grpcObj = grpc.loadPackageDefinition(packageDef);
 
-postServer.addService(grpcObj.discovery.DiscoveryService.service, {
-    getStatus: getStatus,
+discServer.addService(grpcObj.discovery.DiscoveryService.service, {
     discover: discover,
     removeService: removeService,
     sendMessage: sendMessage,
     putPicture: putPicture,
 });
 
-postServer.bindAsync(
+discServer.bindAsync(
     `${hostname}:${port}`,
     grpc.ServerCredentials.createInsecure(),
     (error, port) => {
         console.log("[ " + getCurrentTime() + " ]:\t" + `Server running at ${hostname}:${port}`);
 
-        postServer.start();
+        discServer.start();
     }
 );
 
-function getStatus(empty, callback) {
-
-    const status = {
-        message: `Server Type: post\nHostname: ${hostname}\nPort: ${port}`
-    };
-
-    callback(null, status);
+function getStatus() {
+    return `Server Type: discovery\nHostname: ${hostname}\nPort: ${port}`;
 }
 
 function discover(serviceInfo, callback) {
@@ -166,11 +171,15 @@ const messageTypes = new Map([
     [ 'putProfile', 'post' ],
     ]);
 
-    const minLoadService = (sType) => {
-        return services[sType].reduce((prev, curr) => {
-            return prev.load < curr.load ? prev : curr;
-        });
-    }
+const minLoadService = (sType) => {
+
+    if (services[sType].length == 0)
+        return null;
+
+    return services[sType].reduce((prev, curr) => {
+        return prev.load < curr.load ? prev : curr;
+    });
+}
 
 function sendMessage(message, callback) {
     const {method, body} = message.request;
@@ -178,15 +187,38 @@ function sendMessage(message, callback) {
     console.log("[ " + getCurrentTime() + " ]: {" + method + "}\t" + body);
 
     if (method === "getStatus") {
-        const {sType, hostname, port} = body.split(":");
+        const [sType, hostname, port] = body.split(":");
 
-        const service = services[sType].filter((service) => {
-            return ( service.hostname === hostname && service.port === port )
-        })
+        if (sType == null || hostname == null || port == null) {
+            callback(null, {success: false, body: "No such service! Check the input data!"});
+            return;
+        }
 
-        service.client.getStatus({}, (error, result) => {
-            if (error)
+        try{
+
+        if (sType === "discovery" && hostname === this.hostname && port === this.port) {
+            callback(null, {success: true, body: getStatus()});
+            return;
+        }} catch(error) {console.log(error);}
+
+        const service = services[sType].filter(service => service.hostname === hostname && service.port == port)[0];
+
+        if (service == null) {
+            callback(null, {success: false, body: "No such service!"});
+            return;
+        } else {
+            if (service.client == null) {
+                callback(null, {success: false, body: "No such service!"});
+                return;
+            }
+        }
+
+        service.client.getStatus(null, (error, result) => {
+
+            if (error) {
                 callback(null, {success: false, body: error});
+                return;
+            }
 
             callback(null, {success: true, body: JSON.stringify(result)});
         });
@@ -197,14 +229,22 @@ function sendMessage(message, callback) {
 
         const service = minLoadService(sType);
 
+        if (service == null || !service.hasOwnProperty('client')) {
+            callback(null, {success: false, body: 'No such service available!'});
+            return;
+        }
+
         service.load++;
 
-        service.client[method](JSON.parse(body), (error, result) => {
+        service.client[method](JSON.parse(body),
+        (error, result) => {
 
         service.load--;
 
-        if (error) 
+        if (error) {
             callback(null, {success: false, body: error});
+            return;
+        }
 
         callback(null, {success: true, body: JSON.stringify(result)});
 
@@ -220,8 +260,11 @@ function putPicture(call, callback) {
     const post = minLoadService('post');
 
     const callPost = post.client.putPicture(function(error, response) {
-        if (error)
+
+        if (error) {
             callback(null, {success: response.success, error: error});
+            return;
+        }
 
         callback(null, {success: response.success, link: response.link});
     });

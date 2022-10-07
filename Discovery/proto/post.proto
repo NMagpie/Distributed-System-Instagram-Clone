@@ -13,7 +13,7 @@ service PostService {
 
     rpc putProfile (ProfilePutInfo) returns (PutResult) {}
 
-    rpc putPicture(stream PictureInfo) returns (PutResult) {}
+    rpc putPicture (stream PictureInfo) returns (PutResult) {}
 }
 
 message Username {
