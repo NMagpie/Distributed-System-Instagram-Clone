@@ -11,7 +11,7 @@ const dbUser = process.env.DBUSER;
 const dbPassword = process.env.DBPASSWORD;
 const database = process.env.DB;
 
-const promisify = require("./util");
+const {promisify, getCurrentTime, taskLimiter} = require("./util");
 
 const discoveryClient = require("./discoveryClient");
 
@@ -55,12 +55,12 @@ const postServer = new grpc.Server();
 const grpcObj = grpc.loadPackageDefinition(packageDef);
 
 postServer.addService(grpcObj.post.PostService.service, {
-    getProfile: getProfile,
-    getPost: getPost,
-    getStatus: getStatus,
-    putPost: putPost,
-    putProfile : putProfile,
-    putPicture: putPicture,
+    getProfile: taskLimiter(getProfile, postServer),
+    getPost: taskLimiter(getPost, postServer),
+    getStatus: taskLimiter(getStatus, postServer),
+    putPost: taskLimiter(putPost, postServer),
+    putProfile : taskLimiter(putProfile, postServer),
+    putPicture: taskLimiter(putPicture, postServer),
 });
 
 postServer.bindAsync(
@@ -80,111 +80,140 @@ postServer.bindAsync(
 
 function getProfile(username, callback) {
 
-    console.log("[ " + getCurrentTime() + " ]: {getProfile}\t" + username.request.username);
+    const method = arguments.callee.name;
 
-    const profUsername = username.request.username;
+            console.log("[ " + getCurrentTime() + ` ]: {${method}}\t` + username.request.username);
 
-    //example if service is sending the result for too long
+            const profUsername = username.request.username;
 
-    //new Promise(resolve => setTimeout(resolve, 1_000)).then(() => {
+            //example if service is sending the result for too long
 
-        query(`SELECT username, name, profilePicture FROM post_db.profiles WHERE username = \'${profUsername}\'`)
-        .then((result, _) => {
-            callback(null, result[0]);
-        })
-        .catch(error => console.error(error));
+            //new Promise(resolve => setTimeout(resolve, 1_000)).then(() => {
 
-    //})
+                query(`SELECT username, name, profilePicture FROM post_db.profiles WHERE username = \'${profUsername}\'`)
+                .then((result, _) => {
+                    callback(null, result[0]);
+                    release();
+                })
+                .catch(error => {
+                    console.error(error);
+                    release();
+                });
 
+            //})
 }
 
 function getPost(postParams, callback) {
 
-    console.log("[ " + getCurrentTime() + " ]: {getPost}\t" + JSON.stringify(postParams.request));
+    const method = arguments.callee.name;
 
-    const {username, dozen} = postParams.request
+            console.log("[ " + getCurrentTime() + ` ]: {${method}}\t` + JSON.stringify(postParams.request));
 
-    query(`SELECT username, photo, text FROM post_db.posts WHERE username = \'${username}\' LIMIT 10 OFFSET ${dozen*10}`)
-    .then((result, _) => {
-        callback(null, {postInfo: result,});
-    })
-    .catch(error => {
-        console.error(error);
-    });
+            const {username, dozen} = postParams.request
+
+            query(`SELECT username, photo, text FROM post_db.posts WHERE username = \'${username}\' LIMIT 10 OFFSET ${dozen*10}`)
+            .then((result, _) => {
+                callback(null, {postInfo: result,});
+                limiter.exit();
+            })
+            .catch(error => {
+                console.error(error);
+                limiter.exit();
+            });
 
 }
 
 function getStatus(empty, callback) {
 
-    console.log("[ " + getCurrentTime() + " ]: {getStatus}");
+    const method = arguments.callee.name;
 
-    const status = {
-        message: `Server Type: post\nHostname: ${hostname}\nPort: ${port}`
-    };
+            //example if service is sending the result for too long
 
-    callback(null, status);
+            //new Promise(resolve => setTimeout(resolve, 1_500)).then(() => {
+
+            console.log("[ " + getCurrentTime() + ` ]: {${method}}`);
+
+            const status = {
+                message: `Server Type: post\nHostname: ${hostname}\nPort: ${port}`
+            };
+
+            callback(null, status);
+
+            //})
+
 }
 
 function putPost(postInfo, callback) {
 
-    console.log("[ " + getCurrentTime() + " ]: {putPost}\t" + JSON.stringify(postInfo.request));
+    const method = arguments.callee.name;
 
-    const key = postInfo.request.key;
+            console.log("[ " + getCurrentTime() + ` ]: {${method}}\t` + JSON.stringify(postInfo.request));
 
-    const photo = postInfo.request.photo;
+            const key = postInfo.request.key;
 
-    const text = postInfo.request.text;
+            const photo = postInfo.request.photo;
 
-    sendMessage({method: "whoIsThis", body: JSON.stringify({key: key})})
-    .then(response => {
-        const username = JSON.parse(response.body).username;
+            const text = postInfo.request.text;
 
-        if (username == 'null') {
+            sendMessage({method: "whoIsThis", body: JSON.stringify({key: key})})
+            .then(response => {
+                const username = JSON.parse(response.body).username;
 
-            console.log("[ " + getCurrentTime() + " ]:\tUser data was rejected.");
+                if (username == 'null') {
 
-            return ({ success: false, error: "User data was rejected." });
+                    console.log("[ " + getCurrentTime() + " ]:\tUser data was rejected.");
 
-        } else {
-            console.log("[ " + getCurrentTime() + " ]:\tUser data was accepted.");
+                    return ({ success: false, error: "User data was rejected." });
 
-            query(`INSERT INTO post_db.posts (username, photo, text) VALUES ('${username}', '${photo}', '${text}')`)
-        }
-    })
-    .then((result) => {
-        if (result?.error)
-            callback(null, {success: false, error: result.error});
-        else
-            callback( null, {success: true,})
-        })
-    .catch(error => {
-        console.error(error);
-        callback(null, {success: false, error: error})
-    });
+                } else {
+                    console.log("[ " + getCurrentTime() + " ]:\tUser data was accepted.");
+
+                    query(`INSERT INTO post_db.posts (username, photo, text) VALUES ('${username}', '${photo}', '${text}')`)
+                }
+            })
+            .then((result) => {
+                if (result?.error)
+                    callback(null, {success: false, error: result.error});
+                else
+                    callback( null, {success: true,})
+
+                limiter.exit();
+                })
+            .catch(error => {
+                console.error(error);
+                callback(null, {success: false, error: error});
+                limiter.exit();
+            });
 
 }
 
 function putProfile(profileInfo, callback) {
 
-    console.log("[ " + getCurrentTime() + " ]: {putProfile}\t" + JSON.stringify(profileInfo.request));
+    const method = arguments.callee.name;
 
-    const username = profileInfo.request.username;
+            console.log("[ " + getCurrentTime() + ` ]: {${method}}\t` + JSON.stringify(profileInfo.request));
 
-    const name = profileInfo.request.name;
+            const username = profileInfo.request.username;
+        
+            const name = profileInfo.request.name;
+        
+            const avatar = profileInfo.request.avatar;
+        
+            query(`INSERT INTO post_db.profiles (username, name, profilePicture) VALUES ('${username}', '${name}', '${avatar}')`)
+            .then((result) => {
+                if (result?.error)
+                    callback(null, {success: false, body: result.error});
+                else
+                    callback( null, {success: true,});
+        
+                limiter.exit();
+                })
+            .catch(error => {
+                console.error(error);
+                callback(null, {success: false, body: error});
+                limiter.exit();
+            });
 
-    const avatar = profileInfo.request.avatar;
-
-    query(`INSERT INTO post_db.profiles (username, name, profilePicture) VALUES ('${username}', '${name}', '${avatar}')`)
-    .then((result) => {
-        if (result?.error)
-            callback(null, {success: false, body: result.error});
-        else
-            callback( null, {success: true,})
-        })
-    .catch(error => {
-        console.error(error);
-        callback(null, {success: false, body: error})
-    });
 }
 
 function putPicture(call, callback) {
@@ -225,9 +254,3 @@ function putPicture(call, callback) {
 const query = promisify(con.query.bind(con));
 
 const sendMessage = promisify(discoveryClient.sendMessage.bind(discoveryClient));
-
-function getCurrentTime() {
-    const now = new Date();
-
-    return now.getHours() + ":" + now.getMinutes() + ":" + now.getSeconds();
-}

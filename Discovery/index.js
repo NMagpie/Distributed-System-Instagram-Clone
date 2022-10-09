@@ -30,17 +30,6 @@ const initialServices = async () => {
         service.client = new constructor(
             service.hostname+":"+service.port,
             grpc.credentials.createInsecure(),
-            // {
-            //         "timeout":"14.0s",
-            //         "waitForReady": true,
-            //         "retryPolicy": {
-            //             "MaxAttempts": 10,
-            //             "InitialBackoff": ".5s",
-            //             "MaxBackoff": "10s",
-            //             "BackoffMultiplier": 1.5,
-            //             "RetryableStatusCodes": [ "UNAVAILABLE", "UNKNOWN" ]
-            //         },
-            //     },
         );
 
         service.load = 0;
