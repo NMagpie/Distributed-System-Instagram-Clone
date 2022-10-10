@@ -16,7 +16,7 @@ function getCurrentTime() {
     return now.getHours() + ":" + now.getMinutes() + ":" + now.getSeconds();
 }
 
-const limit = 25;
+const limit = 50;
 
 function taskLimiter(method, postServer) {
     return function(body, callback) {
@@ -35,7 +35,12 @@ function taskLimiter(method, postServer) {
         return;
         }
 
-        method(body, callback);
+        const newCallback = (meta, body) => {
+            callback(meta, body);
+            return;
+        }
+
+        method(body, newCallback);
     }
 }
 

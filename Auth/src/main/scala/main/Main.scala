@@ -1,19 +1,20 @@
 package main
 
-import akka.actor.typed.ActorSystem
-import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.grpc.GrpcClientSettings
 import akka.http.scaladsl.Http
 import authentication.AuthenticationServiceHandler
 import com.typesafe.config.ConfigFactory
 import db.DBConnector
 import discovery._
+import main.Main.system.dispatcher
 import rpcImpl.RpcImpl
+import taskLimiter.tlActor
 
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import scala.concurrent.duration.Duration
-import scala.concurrent.{Await, ExecutionContextExecutor}
+import scala.concurrent.Await
 import scala.io.StdIn
 
 /*
@@ -26,9 +27,9 @@ import scala.io.StdIn
 
 object Main {
 
-  implicit val system: ActorSystem[Nothing] = ActorSystem(Behaviors.empty, "my-system")
+  implicit val system: ActorSystem = ActorSystem("my-system")
 
-  implicit val executionContext: ExecutionContextExecutor = system.executionContext
+  val taskLimiter: ActorRef = system.actorOf(Props(new tlActor(100)), "taskLimiter")
 
   val hostname: String = ConfigFactory.load.getString("hostname")
 

@@ -18,6 +18,7 @@ import rpcImpl.RpcImpl
 import scalapb.GeneratedMessage
 import spray.json.{DefaultJsonProtocol, RootJsonFormat}
 import com.google.protobuf.{ByteString => pByteString}
+import scalapb.descriptors.{Descriptor, FieldDescriptor}
 
 import java.nio.charset.StandardCharsets
 import java.time.LocalDateTime
@@ -233,9 +234,13 @@ object Main {
   def response(reply: Future[GeneratedMessage]): Route = {
     onComplete(reply) {
       case Success(replyResult) => println("Reply sent")
-        complete(HttpEntity(ContentTypes.`application/json`,
-          replyResult.toString
-        ))
+
+        if (replyResult.getFieldByNumber(2).toString.equals("Error: 2 UNKNOWN: 429 Too many requests"))
+          complete(HttpResponse(429, entity = "Too many requests"))
+        else
+          complete(HttpEntity(ContentTypes.`application/json`,
+            replyResult.toString
+          ))
       case Failure(e) => e.printStackTrace()
         complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
     }

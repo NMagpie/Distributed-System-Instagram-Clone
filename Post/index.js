@@ -93,11 +93,9 @@ function getProfile(username, callback) {
                 query(`SELECT username, name, profilePicture FROM post_db.profiles WHERE username = \'${profUsername}\'`)
                 .then((result, _) => {
                     callback(null, result[0]);
-                    release();
                 })
                 .catch(error => {
                     console.error(error);
-                    release();
                 });
 
             //})
@@ -114,11 +112,9 @@ function getPost(postParams, callback) {
             query(`SELECT username, photo, text FROM post_db.posts WHERE username = \'${username}\' LIMIT 10 OFFSET ${dozen*10}`)
             .then((result, _) => {
                 callback(null, {postInfo: result,});
-                limiter.exit();
             })
             .catch(error => {
                 console.error(error);
-                limiter.exit();
             });
 
 }
@@ -176,13 +172,10 @@ function putPost(postInfo, callback) {
                     callback(null, {success: false, error: result.error});
                 else
                     callback( null, {success: true,})
-
-                limiter.exit();
                 })
             .catch(error => {
                 console.error(error);
                 callback(null, {success: false, error: error});
-                limiter.exit();
             });
 
 }
@@ -205,13 +198,10 @@ function putProfile(profileInfo, callback) {
                     callback(null, {success: false, body: result.error});
                 else
                     callback( null, {success: true,});
-        
-                limiter.exit();
                 })
             .catch(error => {
                 console.error(error);
                 callback(null, {success: false, body: error});
-                limiter.exit();
             });
 
 }
