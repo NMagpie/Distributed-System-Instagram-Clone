@@ -58,9 +58,9 @@ object Main {
 
   val client: DiscoveryService = DiscoveryServiceClient(clientSettings)
 
-  def main(args: Array[String]): Unit = {
+  Await.ready(client.discover(ServiceInfo("gateway", hostname, grpcPort)), Duration.create(15, "min"))
 
-    Await.ready(client.discover(ServiceInfo("gateway", hostname, grpcPort)), Duration.create(15, "min"))
+  def main(args: Array[String]): Unit = {
 
     val bindServer = Http().newServerAt(hostname, grpcPort).bind(GatewayServiceHandler(new RpcImpl))
 

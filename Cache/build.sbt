@@ -15,6 +15,8 @@ libraryDependencies ++= Seq(
   "org.scalameta" %% "munit" % "0.7.29" % Test,
   "ch.qos.logback" % "logback-classic" % "1.4.1" % Runtime,
   "com.typesafe.akka" %% "akka-http-spray-json" % akkaHttpVersion,
+  "org.json4s" %% "json4s-jackson" % "4.1.0-M1",
+  "org.json4s" %% "json4s-native" % "4.1.0-M1",
 )
 
 enablePlugins(AkkaGrpcPlugin)

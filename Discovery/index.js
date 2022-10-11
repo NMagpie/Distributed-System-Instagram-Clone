@@ -126,6 +126,7 @@ const constructByType = new Map([
     [ 'gateway', serviceConstructors.GatewayService ],
     [ 'auth', serviceConstructors.AuthenticationService ],
     [ 'post', serviceConstructors.PostService ],
+    [ 'cache', serviceConstructors.CacheService ],
 ]);
 
 function removeService(serviceInfo, callback) {
@@ -170,7 +171,9 @@ const minLoadService = (sType) => {
     });
 }
 
+
 function sendMessage(message, callback) {
+
     const {method, body} = message.request;
 
     console.log("[ " + getCurrentTime() + " ]: {" + method + "}\t" + body);
@@ -214,32 +217,123 @@ function sendMessage(message, callback) {
 
     } else {
 
-        const sType = messageTypes.get(method);
+        if (method == "getProfile" || method == "getPost") {
 
-        const service = minLoadService(sType);
+/////////////////////////////////////////////////////////////////////////
 
-        if (service == null || !service.hasOwnProperty('client')) {
-            callback(null, {success: false, body: 'No such service available!'});
-            return;
-        }
+            const parsedBody = JSON.parse(body);
 
-        service.load++;
+            const query = {
+                method: 'get',
+                message: JSON.stringify({
+                what: method,
+                of: parsedBody.username,
+                ...(parsedBody.dozen != null && {dozen: parseInt(parsedBody.dozen)}),
+            }),
+            };
+        
+            const service = minLoadService('cache');
+        
+            if (service == null || !service.hasOwnProperty('client')) {
+                callback(null, {success: false, body: 'No such service available!'});
+                return;
+            }
+        
+            service.load++;
+        
+            service.client.query(query,
+            (error, result) => {
+        
+            service.load--;
+        
+            if (error || result.message == "null") {
+                sendFurther(method, body, callback);
+                return;
+            }
 
-        service.client[method](JSON.parse(body),
-        (error, result) => {
+            callback(null, {success: true, body: JSON.stringify(result)});
 
-        service.load--;
+            });
 
-        if (error) {
-            callback(null, {success: false, body: error});
-            return;
-        }
+        } else
+            sendFurther(method, body, callback);
 
-        callback(null, {success: true, body: JSON.stringify(result)});
-
-        });
+/////////////////////////////////////////////////////////////////////////
 
     }
+
+}
+
+function sendFurther(method, body, callback) {
+
+    console.log(method + "\n" + body + "\n")
+
+    const sType = messageTypes.get(method);
+
+    const service = minLoadService(sType);
+
+    if (service == null || !service.hasOwnProperty('client')) {
+        callback(null, {success: false, body: 'No such service available!'});
+        return;
+    }
+
+    service.load++;
+
+    const parsedBody = JSON.parse(body);
+
+    service.client[method](parsedBody,
+    (error, result) => {
+
+    service.load--;
+
+    if (error) {
+        callback(null, {success: false, body: error});
+        return;
+    }
+
+
+    if (method == "getProfile" || method == "getPost")
+        putCache(parsedBody.username, method, result, parsedBody.dozen);
+
+    callback(null, {success: true, body: JSON.stringify(result)});
+
+    });
+
+}
+
+function putCache(username, method, body, dozen = null) {
+
+    const message = (method == "getProfile") ? 
+    {
+        username: username,
+        name: body.name,
+        profilePicture: body.profilePicture,
+        posts: [],
+    } : {
+        username: username,
+        name: null,
+        profilePicture: null,
+        posts: { [dozen]: body.postInfo },
+    }
+
+    const query = {
+        method: 'put',
+        message: JSON.stringify(message)
+    };
+
+    const service = minLoadService('cache');
+
+    if (service == null || !service.hasOwnProperty('client')) {
+        callback(null, {success: false, body: 'No such service available!'});
+        return;
+    }
+
+    service.load++;
+
+    service.client.query(query,
+    (resolve, _) => {
+    service.load--;
+    });
 }
 
 function putPicture(call, callback) {

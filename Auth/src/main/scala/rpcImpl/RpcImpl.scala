@@ -19,7 +19,7 @@ import scala.language.postfixOps
 
 class RpcImpl extends AuthenticationService {
 
-  implicit val timeout = Timeout(10 seconds)
+  implicit val timeout: Timeout = Timeout(10 seconds)
 
   override def isAuth(in: AuthKey): Future[AuthBool] = {
 

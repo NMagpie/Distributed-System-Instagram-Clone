@@ -7,9 +7,10 @@ import authentication.AuthenticationServiceHandler
 import com.typesafe.config.ConfigFactory
 import db.DBConnector
 import discovery._
-import main.Main.system.dispatcher
 import rpcImpl.RpcImpl
 import taskLimiter.tlActor
+
+import main.Main.system.dispatcher
 
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter

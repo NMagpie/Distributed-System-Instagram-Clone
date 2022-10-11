@@ -1,17 +1,21 @@
 package main
 
-import akka.actor.typed.ActorSystem
-import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.grpc.GrpcClientSettings
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.model._
-import akka.http.scaladsl.server.Directives._
+import cache.CacheServiceHandler
+import main.Main.system.dispatcher
 
-import java.nio.charset.StandardCharsets
-import java.util.Base64
 import scala.io.StdIn
-import scala.util.{Failure, Success}
 import com.typesafe.config.ConfigFactory
+import discovery.{DiscoveryService, DiscoveryServiceClient, ServiceInfo}
+import rpcImpl.RpcImpl
+import taskLimiter.tlActor
+
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 
 /*
 
@@ -23,15 +27,25 @@ import com.typesafe.config.ConfigFactory
 
 object Main {
 
-  implicit val system = ActorSystem(Behaviors.empty, "my-system")
+  implicit val system: ActorSystem = ActorSystem("my-system")
 
-  implicit val executionContext = system.executionContext
+  val taskLimiter: ActorRef = system.actorOf(Props(new tlActor(100)), "taskLimiter")
+
+  val hostname: String = ConfigFactory.load.getString("hostname")
+
+  val port: Int = ConfigFactory.load.getInt("port")
+
+  val discoveryHost: String = ConfigFactory.load.getString("discoveryHost")
+
+  val discoveryPort: Int = ConfigFactory.load.getInt("discoveryPort")
+
+  val clientSettings: GrpcClientSettings = GrpcClientSettings.connectToServiceAt(discoveryHost, discoveryPort).withTls(false)
+
+  val client: DiscoveryService = DiscoveryServiceClient(clientSettings)
+
+  Await.ready(client.discover(ServiceInfo("cache", hostname, port)), Duration.create(15, "min"))
 
   def main(args: Array[String]): Unit = {
-
-    val hostname = ConfigFactory.load.getString("hostname")
-
-    val port = ConfigFactory.load.getInt("port")
 
     val bindServer = Http().newServerAt(hostname, port).bind(CacheServiceHandler(new RpcImpl))
 
@@ -42,6 +56,11 @@ object Main {
       .onComplete(_ => {
         system.terminate()
       })
+  }
+
+  def getCurrentTime: String = {
+    val timestamp = LocalDateTime.now()
+    DateTimeFormatter.ofPattern("HH:mm:ss").format(timestamp)
   }
 
 }

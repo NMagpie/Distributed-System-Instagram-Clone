@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package cache;
+
+service CacheService {
+  rpc query (Query) returns (QueryResult) {}
+
+  rpc getStatus (Empty) returns (Status) {}
+}
+
+message Query {
+  string method = 1;
+  string message = 2;
+}
+
+message QueryResult {
+  string message = 1;
+}
+
+message Empty {}
+
+message Status {
+  string message = 1;
+}
