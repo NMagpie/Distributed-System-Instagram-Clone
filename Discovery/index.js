@@ -179,7 +179,7 @@ function sendMessage(message, callback) {
     console.log("[ " + getCurrentTime() + " ]: {" + method + "}\t" + body);
 
     if (method === "getStatus") {
-        const [sType, hostname, port] = body.split(":");
+        const [sType, sHostname, sPort] = body.split(":");
 
         if (sType == null || hostname == null || port == null) {
             callback(null, {success: false, body: "No such service! Check the input data!"});
@@ -188,12 +188,12 @@ function sendMessage(message, callback) {
 
         try{
 
-        if (sType === "discovery" && hostname === this.hostname && port === this.port) {
+        if (sType === "discovery" && hostname === sHostname && port === sPort) {
             callback(null, {success: true, body: getStatus()});
             return;
         }} catch(error) {console.log(error);}
 
-        const service = services[sType].filter(service => service.hostname === hostname && service.port == port)[0];
+        const service = services[sType].filter(service => service.hostname === sHostname && service.port == sPort)[0];
 
         if (service == null) {
             callback(null, {success: false, body: "No such service!"});
@@ -205,7 +205,11 @@ function sendMessage(message, callback) {
             }
         }
 
+        service.load++;
+
         service.client.getStatus(null, (error, result) => {
+
+            service.load--;
 
             if (error) {
                 callback(null, {success: false, body: error});
@@ -219,8 +223,6 @@ function sendMessage(message, callback) {
 
         if (method == "getProfile" || method == "getPost") {
 
-/////////////////////////////////////////////////////////////////////////
-
             const parsedBody = JSON.parse(body);
 
             const query = {
@@ -228,7 +230,7 @@ function sendMessage(message, callback) {
                 message: JSON.stringify({
                 what: method,
                 of: parsedBody.username,
-                ...(parsedBody.dozen != null && {dozen: parseInt(parsedBody.dozen)}),
+                ...(parsedBody.dozen != null && {dozen: parsedBody.dozen}),
             }),
             };
         
@@ -258,15 +260,11 @@ function sendMessage(message, callback) {
         } else
             sendFurther(method, body, callback);
 
-/////////////////////////////////////////////////////////////////////////
-
     }
 
 }
 
 function sendFurther(method, body, callback) {
-
-    console.log(method + "\n" + body + "\n")
 
     const sType = messageTypes.get(method);
 
@@ -291,9 +289,10 @@ function sendFurther(method, body, callback) {
         return;
     }
 
-
-    if (method == "getProfile" || method == "getPost")
+    if (method == "getProfile" || method == "getPost") {
+        result.username = parsedBody.username;
         putCache(parsedBody.username, method, result, parsedBody.dozen);
+    }
 
     callback(null, {success: true, body: JSON.stringify(result)});
 
@@ -302,13 +301,12 @@ function sendFurther(method, body, callback) {
 }
 
 function putCache(username, method, body, dozen = null) {
-
     const message = (method == "getProfile") ? 
     {
         username: username,
         name: body.name,
         profilePicture: body.profilePicture,
-        posts: [],
+        posts: new Map(),
     } : {
         username: username,
         name: null,
@@ -338,7 +336,7 @@ function putCache(username, method, body, dozen = null) {
 
 function putPicture(call, callback) {
 
-    console.log("[ " + getCurrentTime() + " ]: {" + putPicture + "}");
+    console.log("[ " + getCurrentTime() + " ]: {putPicture}");
 
     const post = minLoadService('post');
 

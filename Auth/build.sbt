@@ -1,4 +1,4 @@
-ThisBuild / version := "0.1.0-SNAPSHOT"
+ThisBuild / version := "latest"
 
 ThisBuild / scalaVersion := "2.13.8"
 
@@ -22,7 +22,13 @@ libraryDependencies ++= Seq(
 
 enablePlugins(AkkaGrpcPlugin)
 
+enablePlugins(JavaAppPackaging)
+
+enablePlugins(DockerPlugin)
+
 lazy val root = (project in file("."))
   .settings(
     name := "AuthService"
   )
+
+dockerBaseImage := "openjdk:jre"

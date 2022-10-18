@@ -21,11 +21,11 @@ import org.json4s.native.Serialization.{read, write}
 
 object RpcImpl {
 
-  case class Get(what: String, of: String, dozen: Option[Int])
+  case class Get(what: String, of: String, dozen: Option[String])
 
   case class Post(photo: String, text: String)
 
-  case class Profile(username: String, name: String, profilePicture: String, posts: MMap[Int, Array[Post] ] )
+  case class Profile(username: String, name: String, profilePicture: String, posts: MMap[String, Array[Post] ] )
 
   case class ProfileInfo(username: String, name: String, profilePicture: String)
 }
@@ -48,7 +48,8 @@ class RpcImpl extends cache.CacheService {
 
     val result = Await.result(future, timeout.duration).asInstanceOf[Answer]
 
-    println(s"[$getCurrentTime]: {query}\t$in")
+    println(s"[$getCurrentTime]: [${result.load} of ${result.limit}] {auth}\t$in")
+    //println(s"[$getCurrentTime]: {query}\t$in")
 
     if (result.result) {
 
@@ -66,17 +67,19 @@ class RpcImpl extends cache.CacheService {
             } else {
               query.what match {
                 case "getProfile" =>
-                  val profileInfo = ProfileInfo(profile.username, profile.name, profile.profilePicture)
+                  val profileInfo = if (profile.name == null) "null" else write( ProfileInfo(profile.username, profile.name, profile.profilePicture) )
 
                   taskLimiter ! Free
-                  Future.successful( QueryResult( write( profileInfo ) ) )
+                  Future.successful( QueryResult( profileInfo ) )
 
                 case "getPost" =>
 
                   val dozenPosts = profile.posts(query.dozen.get)
 
+                  val posts = if (dozenPosts.isEmpty) "null" else write( dozenPosts )
+
                   taskLimiter ! Free
-                  Future.successful( QueryResult( write( dozenPosts ) ) )
+                  Future.successful( QueryResult( posts ) )
 
                 case _ =>
                   taskLimiter ! Free
@@ -92,20 +95,23 @@ class RpcImpl extends cache.CacheService {
 
             val profile = profiles.getOrElse(query.username, null)
 
-            if (profile == null)
+            if (profile == null) {
+              println(query)
               profiles.addOne(query.username, query)
-            else {
+            } else {
               val username = if (query.username != null) query.username else profile.username
               val name = if (query.name != null) query.name else profile.name
               val profilePicture = if (query.profilePicture != null) query.profilePicture else profile.profilePicture
 
               val mergedMap =
-                if (query.posts != null)
+                if (query.posts.isEmpty)
                   query.posts ++ profile.posts.map { case (k,v) => k -> query.posts.getOrElse(k,v) }
                 else
                   profile.posts
 
               val updatedProfile = Profile(username, name, profilePicture, mergedMap)
+
+              //println(updatedProfile)
 
               profiles.addOne(username, updatedProfile)
             }
@@ -137,7 +143,7 @@ class RpcImpl extends cache.CacheService {
 
     val result = Await.result(future, timeout.duration).asInstanceOf[Answer]
 
-    if (result.result) {
+    if (result.result) try {
 
       println(s"[$getCurrentTime]: {getStatus}")
 
@@ -146,6 +152,10 @@ class RpcImpl extends cache.CacheService {
       taskLimiter ! Free
       Future(Status(status))
 
+    } catch {
+      case e: Exception =>
+        taskLimiter ! Free
+        Future.failed(e)
     } else
       Future.failed(new GrpcServiceException(grpcStatus.UNKNOWN.withDescription("429 Too many requests")))
   }

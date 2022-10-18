@@ -60,7 +60,7 @@ postServer.addService(grpcObj.post.PostService.service, {
     getStatus: taskLimiter(getStatus, postServer),
     putPost: taskLimiter(putPost, postServer),
     putProfile : taskLimiter(putProfile, postServer),
-    putPicture: taskLimiter(putPicture, postServer),
+    putPicture: putPicture,
 });
 
 postServer.bindAsync(
@@ -80,19 +80,22 @@ postServer.bindAsync(
 
 function getProfile(username, callback) {
 
-    const method = arguments.callee.name;
-
-            console.log("[ " + getCurrentTime() + ` ]: {${method}}\t` + username.request.username);
-
             const profUsername = username.request.username;
 
             //example if service is sending the result for too long
 
             //new Promise(resolve => setTimeout(resolve, 1_000)).then(() => {
 
-                query(`SELECT username, name, profilePicture FROM post_db.profiles WHERE username = \'${profUsername}\'`)
+                query(`(SELECT username, name, profilePicture FROM post_db.profiles WHERE username = \'${profUsername}\') UNION ALL SELECT NULL, NULL, NULL LIMIT 1`)
                 .then((result, _) => {
-                    callback(null, result[0]);
+
+                    if (result[0].username != null)
+                        callback(null, result[0]);
+                    else
+                        callback({
+                            message: "The user does not exists!",
+                        });
+
                 })
                 .catch(error => {
                     console.error(error);
@@ -103,15 +106,18 @@ function getProfile(username, callback) {
 
 function getPost(postParams, callback) {
 
-    const method = arguments.callee.name;
-
-            console.log("[ " + getCurrentTime() + ` ]: {${method}}\t` + JSON.stringify(postParams.request));
-
             const {username, dozen} = postParams.request
 
-            query(`SELECT username, photo, text FROM post_db.posts WHERE username = \'${username}\' LIMIT 10 OFFSET ${dozen*10}`)
+            query(`(SELECT username, photo, text FROM post_db.posts WHERE username = \'${username}\' LIMIT 10 OFFSET ${dozen*10}) UNION ALL SELECT NULL, NULL, NULL LIMIT 10`)
             .then((result, _) => {
-                callback(null, {postInfo: result,});
+
+                if (result[0].username != null)
+                    callback(null, {postInfo: result,});
+                else
+                    callback({
+                        message: "The user does not exists!",
+                    });
+
             })
             .catch(error => {
                 console.error(error);
@@ -121,13 +127,9 @@ function getPost(postParams, callback) {
 
 function getStatus(empty, callback) {
 
-    const method = arguments.callee.name;
-
             //example if service is sending the result for too long
 
             //new Promise(resolve => setTimeout(resolve, 1_500)).then(() => {
-
-            console.log("[ " + getCurrentTime() + ` ]: {${method}}`);
 
             const status = {
                 message: `Server Type: post\nHostname: ${hostname}\nPort: ${port}`
@@ -141,10 +143,6 @@ function getStatus(empty, callback) {
 
 function putPost(postInfo, callback) {
 
-    const method = arguments.callee.name;
-
-            console.log("[ " + getCurrentTime() + ` ]: {${method}}\t` + JSON.stringify(postInfo.request));
-
             const key = postInfo.request.key;
 
             const photo = postInfo.request.photo;
@@ -157,12 +155,12 @@ function putPost(postInfo, callback) {
 
                 if (username == 'null') {
 
-                    console.log("[ " + getCurrentTime() + " ]:\tUser data was rejected.");
+                    //console.log("[ " + getCurrentTime() + " ]:\tUser data was rejected.");
 
                     return ({ success: false, error: "User data was rejected." });
 
                 } else {
-                    console.log("[ " + getCurrentTime() + " ]:\tUser data was accepted.");
+                    //console.log("[ " + getCurrentTime() + " ]:\tUser data was accepted.");
 
                     query(`INSERT INTO post_db.posts (username, photo, text) VALUES ('${username}', '${photo}', '${text}')`)
                 }
@@ -181,10 +179,6 @@ function putPost(postInfo, callback) {
 }
 
 function putProfile(profileInfo, callback) {
-
-    const method = arguments.callee.name;
-
-            console.log("[ " + getCurrentTime() + ` ]: {${method}}\t` + JSON.stringify(profileInfo.request));
 
             const username = profileInfo.request.username;
         
