@@ -27,9 +27,9 @@ class RpcImpl extends AuthenticationService {
 
     val result = Await.result(future, timeout.duration).asInstanceOf[Answer]
 
-    if (result.result) {
+    if (result.result) try {
 
-      println(s"[$getCurrentTime]: {isAuth}\t${in.key}")
+      println(s"[$getCurrentTime]: [${result.load} of ${result.limit}] {isAuth}\t${in.key}")
 
       val key = in.key
 
@@ -42,6 +42,10 @@ class RpcImpl extends AuthenticationService {
       taskLimiter ! Free
       Future(AuthBool(exists))
 
+    } catch {
+      case e: Exception =>
+        taskLimiter ! Free
+        Future.failed(e)
     } else
       Future.failed(new GrpcServiceException(grpcStatus.UNKNOWN.withDescription("429 Too many requests")))
   }
@@ -52,23 +56,29 @@ class RpcImpl extends AuthenticationService {
 
     val result = Await.result(future, timeout.duration).asInstanceOf[Answer]
 
-    if (result.result) {
+    if (result.result) try {
 
-      println(s"[$getCurrentTime]: {auth}\t${in.encode}")
+      println(s"[$getCurrentTime]: [${result.load} of ${result.limit}] {auth}\t${in.encode}")
+
+      Thread.sleep(100)
 
       val Array(username, password) = new String(Base64.getDecoder.decode(in.encode), StandardCharsets.UTF_8).split(":")
       val statement = connection.createStatement
 
       val rs = statement.executeQuery("SELECT auth_db.users.key FROM auth_db.users WHERE username = '%s' and password = '%s'".format(username, password))
       if (rs.next) {
-        println("User was found, sending key")
+        //println("User was found, sending key")
         taskLimiter ! Free
         Future(Result(Option(rs.getString("key")), None))
       } else {
-        println("User was not found!")
+        //println("User was not found!")
         taskLimiter ! Free
         Future(Result(None, Option("User was not found!")))
       }
+    } catch {
+      case e: Exception =>
+        taskLimiter ! Free
+        Future.failed(e)
     } else
       Future.failed(new GrpcServiceException(grpcStatus.UNKNOWN.withDescription("429 Too many requests")))
   }
@@ -79,19 +89,19 @@ class RpcImpl extends AuthenticationService {
 
     val result = Await.result(future, timeout.duration).asInstanceOf[Answer]
 
-    if (result.result) {
+    if (result.result) try {
 
-      println(s"[$getCurrentTime]: {register}\t${in.encode}")
+      println(s"[$getCurrentTime]: [${result.load} of ${result.limit}] {register}\t${in.encode}")
 
       val Array(username, password) = new String(Base64.getDecoder.decode(in.encode), StandardCharsets.UTF_8).split(":")
       val statement = connection.createStatement
       val rs = statement.executeQuery("SELECT EXISTS(SELECT 1 FROM auth_db.users WHERE username ='%s')".format(username))
       var exists = false
       rs.next
-      exists = if (rs.getString(1) == "1") true else false
+      exists = rs.getString(1) == "1"
 
       if (exists) {
-        println("User was found, cannot register!")
+        //println("User was found, cannot register!")
         taskLimiter ! Free
         Future(Result(None, Option("User already exists!")))
       } else {
@@ -99,12 +109,16 @@ class RpcImpl extends AuthenticationService {
         val rs = statement.executeQuery("SELECT auth_db.users.key FROM auth_db.users WHERE username = '%s'".format(username))
 
         rs.next
-        println("User was not found, registering")
+        //println("User was not found, registering")
 
         taskLimiter ! Free
         Future(Result(Option(rs.getString("key")), None))
       }
 
+    } catch {
+      case e: Exception =>
+        taskLimiter ! Free
+        Future.failed(e)
     } else
       Future.failed(new GrpcServiceException(grpcStatus.UNKNOWN.withDescription("429 Too many requests")))
 
@@ -116,15 +130,19 @@ class RpcImpl extends AuthenticationService {
 
     val result = Await.result(future, timeout.duration).asInstanceOf[Answer]
 
-    if (result.result) {
+    if (result.result) try {
 
-      println(s"[$getCurrentTime]: {getStatus}")
+      println(s"[$getCurrentTime]: [${result.load} of ${result.limit}] {getStatus}")
 
       val status = s"Server Type: Authentication\nHostname: ${main.Main.hostname}\nPort: ${main.Main.port}"
 
       taskLimiter ! Free
       Future(Status(status))
 
+    } catch {
+      case e: Exception =>
+        taskLimiter ! Free
+        Future.failed(e)
     } else
       Future.failed(new GrpcServiceException(grpcStatus.UNKNOWN.withDescription("429 Too many requests")))
   }
@@ -135,9 +153,9 @@ class RpcImpl extends AuthenticationService {
 
     val result = Await.result(future, timeout.duration).asInstanceOf[Answer]
 
-    if (result.result) {
+    if (result.result) try {
 
-      println(s"[$getCurrentTime]: {whoIsThis}\t${in.key}")
+      println(s"[$getCurrentTime]: [${result.load} of ${result.limit}] {whoIsThis}\t${in.key}")
 
       val statement = connection.createStatement
       val rs = statement.executeQuery("SELECT username FROM auth_db.users WHERE users.key ='%s'".format(in.key))
@@ -150,6 +168,10 @@ class RpcImpl extends AuthenticationService {
         Future(User("null"))
       }
 
+    } catch {
+      case e: Exception =>
+        taskLimiter ! Free
+        Future.failed(e)
     } else
       Future.failed(new GrpcServiceException(grpcStatus.UNKNOWN.withDescription("429 Too many requests")))
   }

@@ -16,14 +16,12 @@ function getCurrentTime() {
     return now.getHours() + ":" + now.getMinutes() + ":" + now.getSeconds();
 }
 
-const limit = 50;
+const limit = process.env.LIMIT;
 
 function taskLimiter(method, postServer) {
     return function(body, callback) {
 
         const activeSessions = postServer.callTracker.callsStarted - (postServer.callTracker.callsSucceeded + postServer.callTracker.callsFailed);
-
-        console.log(limit + " " + activeSessions);
 
         if (activeSessions > limit) {
             console.log("[ " + getCurrentTime() + ` ]: {${method.name}}\tConcurrent task limit exceeded!`);
@@ -34,6 +32,8 @@ function taskLimiter(method, postServer) {
 
         return;
         }
+
+        console.log(`[${getCurrentTime()}]: [${activeSessions} of ${limit}] {${method.name}}\t${JSON.stringify(body.request)}`)
 
         const newCallback = (meta, body) => {
             callback(meta, body);
