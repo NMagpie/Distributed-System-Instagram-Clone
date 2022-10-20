@@ -104,7 +104,7 @@ class RpcImpl extends cache.CacheService {
               val profilePicture = if (query.profilePicture != null) query.profilePicture else profile.profilePicture
 
               val mergedMap =
-                if (query.posts.isEmpty)
+                if (query.posts.nonEmpty)
                   query.posts ++ profile.posts.map { case (k,v) => k -> query.posts.getOrElse(k,v) }
                 else
                   profile.posts

@@ -30,7 +30,7 @@ object Main {
 
   implicit val system: ActorSystem = ActorSystem("my-system")
 
-  val taskLimiter: ActorRef = system.actorOf(Props(new tlActor(18)), "taskLimiter")
+  val taskLimiter: ActorRef = system.actorOf(Props(new tlActor(15)), "taskLimiter")
 
   val hostname: String = ConfigFactory.load.getString("hostname")
 
