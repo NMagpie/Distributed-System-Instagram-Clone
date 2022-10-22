@@ -1,43 +1,21 @@
 syntax = "proto3";
 
-package discovery;
+package services.discovery;
+
+import "services.proto";
 
 service DiscoveryService {
 
-    rpc discover(ServiceInfo) returns (Empty) {}
+    rpc discover (ServiceInfo) returns (Result) {}
 
-    rpc removeService(ServiceInfo) returns (Empty) {}
+    rpc removeService (ServiceInfo) returns (Empty) {}
 
-    rpc sendMessage(Message) returns (MessageResult) {}
-
-    rpc putPicture(stream PictureInfo) returns (PutResult) {}
+    rpc getStatus (Empty) returns (Status) {}
 }
 
-message Empty {}
-
-message ServiceInfo {
-    string type = 1;
-    string hostname = 2;
-    int32 port = 3;
-}
-
-message Message {
-    string method = 1;
-    string body = 2;
-}
-
-message MessageResult {
-    bool success = 1;
-    string body = 2;
-}
-
-message PutResult {
-    bool success = 1;
-    optional string error = 2;
-    optional string link = 3;
-}
-
-message PictureInfo {
-    bytes chunk = 1;
-    optional string fileType = 2;
+message Result {
+    repeated ServiceInfo gateway = 1;
+    repeated ServiceInfo auth = 2;
+    repeated ServiceInfo cache = 3;
+    repeated ServiceInfo post = 4;
 }

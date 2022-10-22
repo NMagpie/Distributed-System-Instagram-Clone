@@ -54,13 +54,13 @@ const postServer = new grpc.Server();
 
 const grpcObj = grpc.loadPackageDefinition(packageDef);
 
-postServer.addService(grpcObj.post.PostService.service, {
+postServer.addService(grpcObj.services.post.PostService.service, {
     getProfile: taskLimiter(getProfile, postServer),
     getPost: taskLimiter(getPost, postServer),
     getStatus: taskLimiter(getStatus, postServer),
     putPost: taskLimiter(putPost, postServer),
     putProfile : taskLimiter(putProfile, postServer),
-    putPicture: putPicture,
+    putPicture: taskLimiter(putPicture, postServer),
 });
 
 postServer.bindAsync(
@@ -143,28 +143,13 @@ function getStatus(empty, callback) {
 
 function putPost(postInfo, callback) {
 
-            const key = postInfo.request.key;
-
             const photo = postInfo.request.photo;
 
             const text = postInfo.request.text;
 
-            sendMessage({method: "whoIsThis", body: JSON.stringify({key: key})})
-            .then(response => {
-                const username = JSON.parse(response.body).username;
+            const username = postInfo.request.username;
 
-                if (username == 'null') {
-
-                    //console.log("[ " + getCurrentTime() + " ]:\tUser data was rejected.");
-
-                    return ({ success: false, error: "User data was rejected." });
-
-                } else {
-                    //console.log("[ " + getCurrentTime() + " ]:\tUser data was accepted.");
-
-                    query(`INSERT INTO post_db.posts (username, photo, text) VALUES ('${username}', '${photo}', '${text}')`)
-                }
-            })
+            query(`INSERT INTO post_db.posts (username, photo, text) VALUES ('${username}', '${photo}', '${text}')`)
             .then((result) => {
                 if (result?.error)
                     callback(null, {success: false, error: result.error});
@@ -236,5 +221,3 @@ function putPicture(call, callback) {
 }
 
 const query = promisify(con.query.bind(con));
-
-const sendMessage = promisify(discoveryClient.sendMessage.bind(discoveryClient));

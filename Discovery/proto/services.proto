@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package services;
+
+message Empty {}
+
+message Status {
+  string message = 1;
+}
+
+message ServiceInfo {
+  string type = 1;
+  string hostname = 2;
+  int32 port = 3;
+}

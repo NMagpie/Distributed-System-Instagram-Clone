@@ -1,6 +1,8 @@
 syntax = "proto3";
 
-package post;
+package services.post;
+
+import "services.proto";
 
 service PostService {
     rpc getProfile (Username) returns (ProfileInfo) {}
@@ -41,12 +43,6 @@ message PostInfo {
     string text = 3;
 }
 
-message Empty {}
-
-message Status {
-    string message = 1;
-}
-
 message ProfilePutInfo {
     string username = 1;
     string name = 2;
@@ -54,7 +50,7 @@ message ProfilePutInfo {
 }
 
 message PostPutInfo {
-    string key = 1;
+    string username = 1;
     string photo = 2;
     string text = 3;
 }

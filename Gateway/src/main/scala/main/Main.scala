@@ -1,31 +1,38 @@
 package main
 
 import akka.NotUsed
-import akka.actor.typed.ActorSystem
-import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.grpc.GrpcClientSettings
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
+import akka.pattern.ask
 import akka.stream.scaladsl.{Flow, Source}
-import akka.util.ByteString
+import akka.util.{ByteString, Timeout}
+import com.google.protobuf.{ByteString => pByteString}
 import com.typesafe.config.ConfigFactory
-import discovery._
-import gateway._
+import main.Main.system.dispatcher
+import org.json4s.jackson.Serialization
+import org.json4s.{FieldSerializer, Formats, NoTypeHints}
 import rpcImpl.RpcImpl
 import scalapb.GeneratedMessage
-import spray.json.{DefaultJsonProtocol, RootJsonFormat}
-import com.google.protobuf.{ByteString => pByteString}
-import scalapb.descriptors.{Descriptor, FieldDescriptor}
+import scalapb.json4s.JsonFormat
+import services.ServiceManager._
+import services.Services.{AuthService, CacheService, PostService}
+import services.authentication._
+import services.cache._
+import services.discovery._
+import services.gateway._
+import services.post._
+import services.{Empty, ServiceInfo, ServiceManager}
 
 import java.nio.charset.StandardCharsets
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Base64
-import scala.concurrent.duration.Duration
-import scala.concurrent.{Await, ExecutionContextExecutor, Future}
+import scala.concurrent.duration.{Duration, DurationInt}
+import scala.concurrent.{Await, Future}
 import scala.io.StdIn
 import scala.language.postfixOps
 import scala.util.{Failure, Success}
@@ -40,9 +47,13 @@ import scala.util.{Failure, Success}
 
 object Main {
 
-  implicit val system: ActorSystem[Nothing] = ActorSystem(Behaviors.empty, "my-system")
+  case class Profile(username: String, name: String, profilePicture: String, posts: Map[String, Array[PostInfo]])
 
-  implicit val executionContext: ExecutionContextExecutor = system.executionContext
+  case class ProfileInfo(username: String, name: String, profilePicture: String)
+
+  implicit val system: ActorSystem = ActorSystem("my-system")
+
+  implicit val formats: Formats = Serialization.formats(NoTypeHints) + FieldSerializer[GeneratedMessage]()
 
   val hostname: String = ConfigFactory.load.getString("hostname")
 
@@ -56,9 +67,26 @@ object Main {
 
   val clientSettings: GrpcClientSettings = GrpcClientSettings.connectToServiceAt(discoveryHost, discoveryPort).withTls(false)
 
-  val client: DiscoveryService = DiscoveryServiceClient(clientSettings)
+  val discovery: DiscoveryService = DiscoveryServiceClient(clientSettings)
 
-  Await.ready(client.discover(ServiceInfo("gateway", hostname, grpcPort)), Duration.create(15, "min"))
+  var Array(authServices : Array[AuthService], postServices: Array[PostService], cacheService: CacheService) = {
+
+  val serviceMap = Await.result(discovery.discover(ServiceInfo("gateway", hostname, grpcPort)), Duration.create(15, "min"))
+
+  val authServices = serviceMap.auth.map(service => AuthService(service.`type`, service.hostname, service.port)).toArray
+
+  val postServices = serviceMap.post.map(service => PostService(service.`type`, service.hostname, service.port)).toArray
+
+  val cacheService = if (serviceMap.cache.nonEmpty) {
+    serviceMap.cache.map(service => CacheService(service.`type`, service.hostname, service.port)).head
+  } else null
+
+  Array(authServices, postServices, cacheService)
+  }
+
+  val serviceManager: ActorRef = system.actorOf(Props(new ServiceManager()), "serviceManager")
+
+  implicit val timeout: Timeout = Timeout(10 seconds)
 
   def main(args: Array[String]): Unit = {
 
@@ -87,55 +115,82 @@ object Main {
     path("register") {
       headerValueByName("Authorization") {
         authData =>
-          val request = s"{\"encode\": \"$authData\"}"
-          val reply = client.sendMessage(Message("register", request))
+
+          val authFuture = (serviceManager ? GetAuth).mapTo[AuthResult]
 
           val username = new String(Base64.getDecoder.decode(authData), StandardCharsets.UTF_8).split(':')(0)
 
           println(s"[$getCurrentTime]: {register}\t$username")
+          onComplete(authFuture) {
 
-          onComplete(reply) {
-            case Success(replyResult) =>
-              if (replyResult.success) {
+            case Success(authResult) =>
 
-                formFields("name") {
-                  name =>
-                    fileUpload("photo") {
-                      case (metaData, file) =>
+              val authService = authResult.client
 
-                        val fileType = "." + metaData.getContentType.mediaType.subType
+              val reply = authService.client.register(UserData(authData))
 
-                        if (!checkFileType(fileType)) {
-                          val request = s"{\"username\": \"$username\", \"name\": \"$name\", " +
-                            s"\"avatar\": \"\"}"
-                          val reply = client.sendMessage(Message("putProfile", request))
-                          response(reply)
-                        }
+              onComplete(reply) {
+                case Success(replyResult) =>
+                  if (replyResult.key.isDefined) {
 
-                        val otherChunk = Flow[ByteString].map(i => PictureInfo(pByteString.copyFrom(i.toArray), None))
+                    formFields("name") {
+                      name =>
+                        fileUpload("photo") {
+                          case (metaData, file) =>
 
-                        val eof = Flow[Seq[Byte]].map(i => PictureInfo(pByteString.copyFrom(i.toArray), Option(fileType)))
+                            val postFuture = (serviceManager ? GetPost).mapTo[PostResult]
 
-                        val photo = file.mapConcat(chunk => chunk.grouped(1024))
-                          .mapMaterializedValue(_ => NotUsed)
-                          .via(otherChunk)
-                          .concat(Source.single("1".getBytes().toSeq).via(eof))
+                            onComplete(postFuture) {
+                              case Success(postResult) =>
 
-                        onComplete(client.putPicture(photo)) {
+                                val postService = postResult.client
 
-                          case Success(result) =>
-                            val request = s"{\"username\": \"$username\", \"name\": \"$name\", " +
-                              s"\"avatar\": \"${result.link.get}\"}"
-                            val reply = client.sendMessage(Message("putProfile", request))
-                            response(reply)
+                                val fileType = "." + metaData.getContentType.mediaType.subType
 
-                          case Failure(e) => e.printStackTrace()
-                            complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+                                if (!checkFileType(fileType) || file == null) {
+
+                                  val reply = postService.client.putProfile(ProfilePutInfo(username, name))
+                                  response(reply)
+
+                                }
+
+                                val otherChunk = Flow[ByteString].map(i => PictureInfo(pByteString.copyFrom(i.toArray), None))
+
+                                val eof = Flow[Seq[Byte]].map(i => PictureInfo(pByteString.copyFrom(i.toArray), Option(fileType)))
+
+                                val photo = file.mapConcat(chunk => chunk.grouped(1024))
+                                  .mapMaterializedValue(_ => NotUsed)
+                                  .via(otherChunk)
+                                  .concat(Source.single("1".getBytes().toSeq).via(eof))
+
+                                onComplete(postService.client.putPicture(photo)) {
+
+                                  case Success(result) =>
+                                    val reply = postService.client.putProfile(ProfilePutInfo(username, name, result.link.get))
+                                    serviceManager ! DecLoad(Left(authService))
+                                    serviceManager ! DecLoad(Right(postService))
+                                    response(reply)
+
+                                  case Failure(e) => e.printStackTrace()
+                                    serviceManager ! DecLoad(Left(authService))
+                                    serviceManager ! DecLoad(Right(postService))
+                                    complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+                                }
+
+                              case Failure(e) => e.printStackTrace()
+                                serviceManager ! DecLoad(Left(authService))
+                                complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+                            }
                         }
                     }
-                }
-              } else {
-                complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, replyResult.toString))
+                  } else {
+                    serviceManager ! DecLoad(Left(authService))
+                    complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, replyResult.toString))
+                  }
+
+                case Failure(e) => e.printStackTrace()
+                  serviceManager ! DecLoad(Left(authService))
+                  complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
               }
 
             case Failure(e) => e.printStackTrace()
@@ -146,103 +201,311 @@ object Main {
   }
 
   val login: Route = path("login") {
+
     headerValueByName("Authorization") {
       authData =>
 
-        println(s"[$getCurrentTime]: {login}\t$authData")
+        val authFuture = (serviceManager ? GetAuth).mapTo[AuthResult]
 
-        val request = s"{\"encode\": \"$authData\"}"
-        val reply = client.sendMessage(Message("auth", request))
-        response(reply)
+        onComplete(authFuture) {
+
+          case Success(authResult) =>
+
+            val authService = authResult.client
+
+            println(s"[$getCurrentTime]: {login}\t$authData")
+
+            val reply = authService.client.auth(UserData(authData))
+
+            serviceManager ! DecLoad(Left(authService))
+
+            response(reply)
+
+          case Failure(e) => e.printStackTrace()
+            complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+        }
+
     }
+
   }
 
   val getPosts: Route = pathPrefix("profile" / Segment / IntNumber) {
     case (username, dozen) =>
 
-      println(s"[$getCurrentTime]: {getPosts}\t$username\t$dozen")
+      val query = cacheService.client.query(Query("get",
+        s"{\"what\": \"getPost\"," +
+        s" \"of\": \"$username\"," +
+        s"\"dozen\": \"$dozen\"}"))
 
-      val request = s"{\"username\": \"$username\", \"dozen\": \"$dozen\"}"
-      val reply = client.sendMessage(Message("getPost", request))
-      response(reply)
+      onComplete(query) {
+
+        case Success(result) =>
+
+          val isNull = result.message.equals("null")
+
+          if (!isNull) {
+
+            println("Reply sent")
+
+            complete(HttpEntity(ContentTypes.`application/json`, "{ \"postInfo\": " + result.message + "}"))
+
+          } else {
+
+            val postFuture = (serviceManager ? GetPost).mapTo[PostResult]
+
+            onComplete(postFuture) {
+
+              case Success(postResult) =>
+
+                println(s"[$getCurrentTime]: {getPosts}\t$username\t$dozen")
+
+                val postService = postResult.client
+
+                val reply = postService.client.getPost(PostParams(username, dozen))
+
+                serviceManager ! DecLoad(Right(postService))
+
+                reply.onComplete {
+                  case Success(replyResult) =>
+
+                    val postInfo = Profile(username, null, null, Map(s"$dozen" -> replyResult.postInfo.toArray))
+
+                    cacheService.client.query(Query("put", Serialization.write(postInfo)))
+                }
+
+                response(reply)
+
+              case Failure(e) => e.printStackTrace()
+                complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+            }
+          }
+
+        case Failure(e) => e.printStackTrace()
+          complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+      }
+
   }
 
   val getProfile: Route = path("profile" / Segment) {
     username =>
 
-      println(s"[$getCurrentTime]: {getProfile}\t$username")
+      val query = cacheService.client.query(Query("get",
+        s"{\"what\": \"getProfile\"," +
+          s" \"of\": \"$username\"}"))
 
-      val request = s"{\"username\": \"$username\"}"
-      val reply = client.sendMessage(Message("getProfile", request))
-      response(reply)
+      onComplete(query) {
+
+        case Success(result) =>
+
+          val isNull = result.message.equals("null")
+
+          if (!isNull) {
+
+            println("Reply sent")
+
+            complete(HttpEntity(ContentTypes.`application/json`, result.message))
+
+          } else {
+
+            val postFuture = (serviceManager ? GetPost).mapTo[PostResult]
+
+            onComplete(postFuture) {
+
+              case Success(postResult) =>
+
+                val postService = postResult.client
+
+                println(s"[$getCurrentTime]: {getProfile}\t$username")
+
+                val reply = postService.client.getProfile(Username(username))
+
+                serviceManager ! DecLoad(Right(postService))
+
+                reply.onComplete {
+                  case Success(replyResult) =>
+
+                    val postInfo = Profile(username, replyResult.name, replyResult.profilePicture, null)
+
+                    cacheService.client.query(Query("put", Serialization.write(postInfo)))
+                }
+
+                response(reply)
+
+              case Failure(e) => e.printStackTrace()
+                complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+            }
+
+          }
+
+        case Failure(e) => e.printStackTrace()
+          complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+      }
+
   }
 
   val putPost: Route = post {
     path("upload") {
       headerValueByName("Key") {
         key =>
-          formFields("text") {
-            text =>
+          val authFuture = (serviceManager ? GetAuth).mapTo[AuthResult]
 
-              println(s"[$getCurrentTime]: {putPost}\t$key\t$text")
+          onComplete(authFuture) {
+            case Success(authResult) =>
 
-              fileUpload("photo") {
-                case (metaData, file) =>
+              val authService = authResult.client
 
-                  val fileType = "." + metaData.getContentType.mediaType.subType
+              val reply = authService.client.whoIsThis(AuthKey(key))
 
-                  if (!checkFileType(fileType))
-                    complete("Image has to have only one of these file types: .png, .jpg, .jpeg")
+              onComplete(reply) {
+                case Success(usernameM) =>
 
-                  val otherChunk = Flow[ByteString].map(i => PictureInfo(pByteString.copyFrom(i.toArray), None))
+                  val username = usernameM.username
 
-                  val eof = Flow[Seq[Byte]].map(i => PictureInfo(pByteString.copyFrom(i.toArray), Option(fileType)))
+                  formFields("text") {
+                    text =>
 
-                  val photo = file.mapConcat(chunk => chunk.grouped(1024))
-                    .mapMaterializedValue(_ => NotUsed)
-                    .via(otherChunk)
-                    .concat(Source.single("1".getBytes().toSeq).via(eof))
+                      println(s"[$getCurrentTime]: {putPost}\t$username\t$text")
 
-                  onComplete(client.putPicture(photo)) {
+                      fileUpload("photo") {
+                        case (metaData, file) =>
 
-                    case Success(result) =>
-                      val request = s"{\"key\": \"$key\", \"photo\": \"${result.link.get}\", " +
-                        s"\"text\": \"$text\"}"
-                      val reply = client.sendMessage(Message("putPost", request))
-                      response(reply)
+                          val fileType = "." + metaData.getContentType.mediaType.subType
 
-                    case Failure(e) => e.printStackTrace()
-                      complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+                          if (!checkFileType(fileType))
+                            complete("Image has to have only one of these file types: .png, .jpg, .jpeg")
+
+                          val otherChunk = Flow[ByteString].map(i => PictureInfo(pByteString.copyFrom(i.toArray), None))
+
+                          val eof = Flow[Seq[Byte]].map(i => PictureInfo(pByteString.copyFrom(i.toArray), Option(fileType)))
+
+                          val photo = file.mapConcat(chunk => chunk.grouped(1024))
+                            .mapMaterializedValue(_ => NotUsed)
+                            .via(otherChunk)
+                            .concat(Source.single("1".getBytes().toSeq).via(eof))
+
+                          val postFuture = (serviceManager ? GetPost).mapTo[PostResult]
+
+                          onComplete(postFuture) {
+
+                            case Success(postResult) =>
+
+                              val postService = postResult.client
+
+                              onComplete(postService.client.putPicture(photo)) {
+
+                                case Success(result) =>
+
+                                  val reply = postService.client.putPost(PostPutInfo(username, result.link.get, text))
+
+                                  serviceManager ! DecLoad(Right(postService))
+
+                                  response(reply)
+
+                                case Failure(e) => e.printStackTrace()
+
+                                  serviceManager ! DecLoad(Right(postService))
+
+                                  complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+                              }
+
+                            case Failure(e) => e.printStackTrace()
+                              complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+
+                          }
+                      }
                   }
+
+                case Failure(e) => e.printStackTrace()
+                  complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+
               }
+
+            case Failure(e) => e.printStackTrace()
+              complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+
           }
+
+        ////////////////////////////////////////
       }
     }
   }
 
   val getStatus: Route = path("status") {
-      formFields("service") {
-        service =>
-          println(s"[$getCurrentTime]: {getStatus}\t$service")
+    formFields("service") {
+      service =>
+        val Array(sType, sHostname, sPort) = service.split(":")
 
-          val reply = client.sendMessage(Message("getStatus", service))
+        val intPort = sPort.toInt
 
-          response(reply)
-      }
+        println(s"[$getCurrentTime]: {getStatus}\t$service")
+
+        sType match {
+          case "gateway" =>
+
+            val status =
+              if (sHostname == hostname && intPort == grpcPort)
+                s"{\n\"message\": \"Server Type: Gateway\\nHostname: $hostname\\nPort: $grpcPort\""
+              else
+                "Such service does not exist"
+            complete(HttpEntity(ContentTypes.`application/json`, status))
+
+          case "cache" =>
+
+            if (sHostname == cacheService.hostname && intPort == cacheService.port)
+              response(cacheService.client.getStatus(Empty()))
+            else
+              complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, "Such service does not exist"))
+
+          case "auth" =>
+
+            val authServiceFiltered = authServices.filter(aService => {
+              aService.hostname == sHostname && aService.port == intPort
+            })
+
+            if (authServiceFiltered.nonEmpty)
+              response(authServiceFiltered(0).client.getStatus(Empty()))
+            else
+              complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, "Such service does not exist"))
+
+          case "post" =>
+
+            val postServiceFiltered = postServices.filter(pService => {
+              pService.hostname == sHostname && pService.port == intPort
+            })
+
+            if (postServiceFiltered.nonEmpty)
+              response(postServiceFiltered(0).client.getStatus(Empty()))
+            else
+              complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, "Such service does not exist"))
+
+          case "discovery" =>
+
+            if (sHostname == discoveryHost && intPort == discoveryPort)
+              response(discovery.getStatus(Empty()))
+            else
+              complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, "Such service does not exist"))
+
+        }
+
     }
+
+  }
 
   def response(reply: Future[GeneratedMessage]): Route = {
     onComplete(reply) {
-      case Success(replyResult) => println("Reply sent")
+      case Success(replyResult) =>
+        println("Reply sent")
 
-        if (replyResult.getFieldByNumber(2).toString.equals("Error: 2 UNKNOWN: 429 Too many requests"))
+        val json = JsonFormat.toJsonString(replyResult)
+
+        complete(HttpEntity(ContentTypes.`application/json`, json))
+
+      case Failure(e) =>
+        if (e.getMessage == "UNKNOWN: 429 Too many requests")
           complete(HttpResponse(429, entity = "Too many requests"))
         else
-          complete(HttpEntity(ContentTypes.`application/json`,
-            replyResult.toString
-          ))
-      case Failure(e) => e.printStackTrace()
-        complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+          e.printStackTrace()
+          complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
     }
   }
 

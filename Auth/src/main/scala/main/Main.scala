@@ -3,12 +3,13 @@ package main
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.grpc.GrpcClientSettings
 import akka.http.scaladsl.Http
-import authentication.AuthenticationServiceHandler
+import services.authentication.AuthenticationServiceHandler
 import com.typesafe.config.ConfigFactory
 import db.DBConnector
-import discovery._
+import services.discovery._
+import services.ServiceInfo
 import rpcImpl.RpcImpl
-import taskLimiter.tlActor
+import taskLimiter.TlActor
 
 import main.Main.system.dispatcher
 
@@ -30,7 +31,7 @@ object Main {
 
   implicit val system: ActorSystem = ActorSystem("my-system")
 
-  val taskLimiter: ActorRef = system.actorOf(Props(new tlActor(15)), "taskLimiter")
+  val taskLimiter: ActorRef = system.actorOf(Props(new TlActor(15)), "taskLimiter")
 
   val hostname: String = ConfigFactory.load.getString("hostname")
 

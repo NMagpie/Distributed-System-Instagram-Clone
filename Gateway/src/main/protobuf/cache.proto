@@ -1,6 +1,8 @@
 syntax = "proto3";
 
-package cache;
+package services.cache;
+
+import "services.proto";
 
 service CacheService {
   rpc query (Query) returns (QueryResult) {}
@@ -14,11 +16,5 @@ message Query {
 }
 
 message QueryResult {
-  string message = 1;
-}
-
-message Empty {}
-
-message Status {
   string message = 1;
 }

@@ -18,6 +18,7 @@ libraryDependencies ++= Seq(
   "ch.qos.logback" % "logback-classic" % "1.4.1" % Runtime,
   "mysql" % "mysql-connector-java" % "5.1.24",
   "com.typesafe.akka" %% "akka-http-spray-json" % akkaHttpVersion,
+  "com.thesamet.scalapb" %% "scalapb-json4s" % "0.12.0",
 )
 
 enablePlugins(AkkaGrpcPlugin)

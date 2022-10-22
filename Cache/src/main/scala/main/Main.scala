@@ -3,14 +3,15 @@ package main
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.grpc.GrpcClientSettings
 import akka.http.scaladsl.Http
-import cache.CacheServiceHandler
+import services.cache.CacheServiceHandler
 import main.Main.system.dispatcher
 
 import scala.io.StdIn
 import com.typesafe.config.ConfigFactory
-import discovery.{DiscoveryService, DiscoveryServiceClient, ServiceInfo}
+import services.discovery.{DiscoveryService, DiscoveryServiceClient}
+import services.ServiceInfo
 import rpcImpl.RpcImpl
-import taskLimiter.tlActor
+import taskLimiter.TlActor
 
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -29,7 +30,7 @@ object Main {
 
   implicit val system: ActorSystem = ActorSystem("my-system")
 
-  val taskLimiter: ActorRef = system.actorOf(Props(new tlActor(100)), "taskLimiter")
+  val taskLimiter: ActorRef = system.actorOf(Props(new TlActor(100)), "taskLimiter")
 
   val hostname: String = ConfigFactory.load.getString("hostname")
 
@@ -43,7 +44,7 @@ object Main {
 
   val client: DiscoveryService = DiscoveryServiceClient(clientSettings)
 
-  Await.ready(client.discover(ServiceInfo("cache", hostname, port)), Duration.create(15, "min"))
+  Await.result(client.discover(ServiceInfo("cache", hostname, port)), Duration.create(15, "min"))
 
   def main(args: Array[String]): Unit = {
 
