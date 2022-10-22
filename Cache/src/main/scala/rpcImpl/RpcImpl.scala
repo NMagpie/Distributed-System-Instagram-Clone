@@ -1,23 +1,20 @@
 package rpcImpl
 
-import cache._
-import taskLimiter.tlActor._
 import akka.grpc.GrpcServiceException
 import akka.util.Timeout
-import discovery.Message
+import services.cache._
+import services.{Empty, Status}
 import io.grpc.{Status => grpcStatus}
-import main.Main.{client, getCurrentTime, taskLimiter}
 import main.Main.system.dispatcher
-import org.json4s.native.JsonMethods
-import org.json4s.native.JsonMethods.parse
+import taskLimiter.TlActor._
+import main.Main.{getCurrentTime, taskLimiter}
+import org.json4s.native.Serialization.{read, write}
 import org.json4s.{Formats, NoTypeHints, jackson}
 
 import scala.collection.mutable.{Map => MMap}
-import scala.concurrent.duration.{Duration, DurationInt}
+import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
-import scala.util.{Failure, Success}
-import org.json4s.native.Serialization.{read, write}
 
 object RpcImpl {
 
@@ -25,12 +22,12 @@ object RpcImpl {
 
   case class Post(photo: String, text: String)
 
-  case class Profile(username: String, name: String, profilePicture: String, posts: MMap[String, Array[Post] ] )
+  case class Profile(username: String, name: String, profilePicture: String, posts: MMap[String, Array[Post]])
 
   case class ProfileInfo(username: String, name: String, profilePicture: String)
 }
 
-class RpcImpl extends cache.CacheService {
+class RpcImpl extends CacheService {
 
   import akka.pattern.ask
 
@@ -40,7 +37,7 @@ class RpcImpl extends cache.CacheService {
 
   implicit val timeout: Timeout = Timeout(10 seconds)
 
-  val profiles : MMap[String, Profile] = MMap[String, Profile]()
+  val profiles: MMap[String, Profile] = MMap[String, Profile]()
 
   override def query(in: Query): Future[QueryResult] = {
 
@@ -48,8 +45,7 @@ class RpcImpl extends cache.CacheService {
 
     val result = Await.result(future, timeout.duration).asInstanceOf[Answer]
 
-    println(s"[$getCurrentTime]: [${result.load} of ${result.limit}] {auth}\t$in")
-    //println(s"[$getCurrentTime]: {query}\t$in")
+    println(s"[$getCurrentTime]: [${result.load} of ${result.limit}] {query}\t$in")
 
     if (result.result) {
 
@@ -67,19 +63,19 @@ class RpcImpl extends cache.CacheService {
             } else {
               query.what match {
                 case "getProfile" =>
-                  val profileInfo = if (profile.name == null) "null" else write( ProfileInfo(profile.username, profile.name, profile.profilePicture) )
+                  val profileInfo = if (profile.name == null) "null" else write(ProfileInfo(profile.username, profile.name, profile.profilePicture))
 
                   taskLimiter ! Free
-                  Future.successful( QueryResult( profileInfo ) )
+                  Future.successful(QueryResult(profileInfo))
 
                 case "getPost" =>
 
-                  val dozenPosts = profile.posts(query.dozen.get)
+                  val dozenPosts = profile.posts.getOrElse(query.dozen.get, Array.empty)
 
-                  val posts = if (dozenPosts.isEmpty) "null" else write( dozenPosts )
+                  val posts = if (dozenPosts.isEmpty) "null" else write(dozenPosts)
 
                   taskLimiter ! Free
-                  Future.successful( QueryResult( posts ) )
+                  Future.successful(QueryResult(posts))
 
                 case _ =>
                   taskLimiter ! Free
@@ -96,8 +92,7 @@ class RpcImpl extends cache.CacheService {
             val profile = profiles.getOrElse(query.username, null)
 
             if (profile == null) {
-              println(query)
-              profiles.addOne(query.username, query)
+              profiles.put(query.username, query)
             } else {
               val username = if (query.username != null) query.username else profile.username
               val name = if (query.name != null) query.name else profile.name
@@ -105,15 +100,13 @@ class RpcImpl extends cache.CacheService {
 
               val mergedMap =
                 if (query.posts.nonEmpty)
-                  query.posts ++ profile.posts.map { case (k,v) => k -> query.posts.getOrElse(k,v) }
+                  query.posts ++ profile.posts.map { case (k, v) => k -> query.posts.getOrElse(k, v) }
                 else
                   profile.posts
 
               val updatedProfile = Profile(username, name, profilePicture, mergedMap)
 
-              //println(updatedProfile)
-
-              profiles.addOne(username, updatedProfile)
+              profiles.put(username, updatedProfile)
             }
 
             taskLimiter ! Free

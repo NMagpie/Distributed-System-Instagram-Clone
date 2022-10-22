@@ -2,7 +2,7 @@ package taskLimiter
 
 import akka.actor.Actor
 
-object tlActor {
+object TlActor {
   case class TrySend()
 
   case class Answer(result: Boolean, limit: Int, load: Int)
@@ -10,16 +10,14 @@ object tlActor {
   case class Free()
 }
 
-class tlActor(limit: Int) extends Actor {
+class TlActor(limit: Int) extends Actor {
 
-  import tlActor._
+  import TlActor._
 
   var counter = 0
 
   override def receive: Receive = {
     case TrySend =>
-
-      //println(counter + " " + limit)
 
       val result = counter < limit
 

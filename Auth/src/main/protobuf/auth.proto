@@ -1,6 +1,8 @@
 syntax = "proto3";
 
-package authentication;
+package services.authentication;
+
+import "services.proto";
 
 service AuthenticationService {
   rpc isAuth (AuthKey) returns (AuthBool) {}
@@ -18,6 +20,10 @@ message AuthKey {
   string key = 1;
 }
 
+message User {
+  string username = 1;
+}
+
 message AuthBool {
   bool auth = 1;
 }
@@ -29,14 +35,4 @@ message UserData {
 message Result {
   optional string key = 2;
   optional string error = 3;
-}
-
-message Empty {}
-
-message Status {
-  string message = 1;
-}
-
-message User {
-  string username = 1;
 }

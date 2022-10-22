@@ -1,18 +1,18 @@
 require('dotenv').config();
 
-const promisify = require("./util").promisify;
-
 const database = require("./db");
 
-const serviceConstructors = require("./proto");
+const GatewayService = require("./gwClient").GatewayService;
 
 const services = {
     gateway: [],
     auth: [],
     cache: [],
     post: [],
-    discovery: [],
-}
+    discovery: null,
+};
+
+const emptyServices = services;
 
 const initialServices = async () => {
     const DBservices = database.collection('services');
@@ -25,16 +25,8 @@ const initialServices = async () => {
 
     cursor.forEach((service) => {
 
-        const constructor = constructByType.get(service.type);
-
-        service.client = new constructor(
-            service.hostname+":"+service.port,
-            grpc.credentials.createInsecure(),
-        );
-
-        service.load = 0;
-
         services[service.type].push(service);
+
     });
 }
 
@@ -61,11 +53,10 @@ const discServer = new grpc.Server();
 
 const grpcObj = grpc.loadPackageDefinition(packageDef);
 
-discServer.addService(grpcObj.discovery.DiscoveryService.service, {
+discServer.addService(grpcObj.services.discovery.DiscoveryService.service, {
     discover: discover,
     removeService: removeService,
-    sendMessage: sendMessage,
-    putPicture: putPicture,
+    getStatus: getStatus,
 });
 
 discServer.bindAsync(
@@ -78,8 +69,15 @@ discServer.bindAsync(
     }
 );
 
-function getStatus() {
-    return `Server Type: discovery\nHostname: ${hostname}\nPort: ${port}`;
+function getStatus(empty, callback) {
+    callback(null, `Server Type: discovery\nHostname: ${hostname}\nPort: ${port}`);
+}
+
+const discResponse = (service) => {
+    if (service.type === "gateway") {
+        return services
+    } else 
+        return emptyServices
 }
 
 function discover(serviceInfo, callback) {
@@ -96,38 +94,40 @@ function discover(serviceInfo, callback) {
         ) {
         (async () => {
             const DBservices = database.collection('services');
-        
+
             const result = await DBservices.insertOne(service);
 
             console.log("[ " + getCurrentTime() + " ]:\t"
             + `Service ${service.type}:${service.hostname}:${service.port} was added: ${result.acknowledged}`);
 
-            const constructor = constructByType.get(service.type);
+            if (service.type === 'cache' && services.cache.length) {
+                callback({message: "Cache service already exists, if it is down, wait a while and try reloading it again."});
+                return;
+            }
 
-            service.client = new constructor(
-                service.hostname+":"+service.port,
-                grpc.credentials.createInsecure()
-            );
+            if (service.type === "gateway") {
+                service.client = new GatewayService(
+                    `${service.hostname}:${service.port}`,
+                    grpc.credentials.createInsecure()
+                );
+            } else {
+                if (services.gateway.length && services.gateway[0]?.client) {
+                    services.gateway[0].client.newService(serviceInfo.request, (error, result) => {
+                        if (error) console.error(error);
+                    });
+                }
+            }
 
-            service.load = 0;
-        
             services[service.type].push(service);
-        
-            callback(null, {});
+
+            callback(null, discResponse(service));
         })()
     } else {
         console.log("[ " + getCurrentTime() + " ]:\tSuch service type does not exist, or this object already exists in the database!");
 
-        callback(null, {});
+        callback(null, discResponse(service));
     }
 }
-
-const constructByType = new Map([
-    [ 'gateway', serviceConstructors.GatewayService ],
-    [ 'auth', serviceConstructors.AuthenticationService ],
-    [ 'post', serviceConstructors.PostService ],
-    [ 'cache', serviceConstructors.CacheService ],
-]);
 
 function removeService(serviceInfo, callback) {
 
@@ -147,220 +147,6 @@ function removeService(serviceInfo, callback) {
         callback(null, {});
     })()
 
-}
-
-const messageTypes = new Map([
-    [ 'isAuth', 'auth' ],     //Auth
-    [ 'auth', 'auth' ],
-    [ 'register', 'auth' ],
-    [ 'whoIsThis', 'auth' ],
-
-    [ 'getProfile', 'post' ], //PostService
-    [ 'getPost', 'post' ],
-    [ 'putPost', 'post' ],  
-    [ 'putProfile', 'post' ],
-    ]);
-
-const minLoadService = (sType) => {
-
-    if (services[sType].length == 0)
-        return null;
-
-    return services[sType].reduce((prev, curr) => {
-        return prev.load < curr.load ? prev : curr;
-    });
-}
-
-
-function sendMessage(message, callback) {
-
-    const {method, body} = message.request;
-
-    console.log("[ " + getCurrentTime() + " ]: {" + method + "}\t" + body);
-
-    if (method === "getStatus") {
-        const [sType, sHostname, sPort] = body.split(":");
-
-        if (sType == null || hostname == null || port == null) {
-            callback(null, {success: false, body: "No such service! Check the input data!"});
-            return;
-        }
-
-        try{
-
-        if (sType === "discovery" && hostname === sHostname && port === sPort) {
-            callback(null, {success: true, body: getStatus()});
-            return;
-        }} catch(error) {console.log(error);}
-
-        const service = services[sType].filter(service => service.hostname === sHostname && service.port == sPort)[0];
-
-        if (service == null) {
-            callback(null, {success: false, body: "No such service!"});
-            return;
-        } else {
-            if (service.client == null) {
-                callback(null, {success: false, body: "No such service!"});
-                return;
-            }
-        }
-
-        service.load++;
-
-        service.client.getStatus(null, (error, result) => {
-
-            service.load--;
-
-            if (error) {
-                callback(null, {success: false, body: error});
-                return;
-            }
-
-            callback(null, {success: true, body: JSON.stringify(result)});
-        });
-
-    } else {
-
-        if (method == "getProfile" || method == "getPost") {
-
-            const parsedBody = JSON.parse(body);
-
-            const query = {
-                method: 'get',
-                message: JSON.stringify({
-                what: method,
-                of: parsedBody.username,
-                ...(parsedBody.dozen != null && {dozen: parsedBody.dozen}),
-            }),
-            };
-        
-            const service = minLoadService('cache');
-        
-            if (service == null || !service.hasOwnProperty('client')) {
-                callback(null, {success: false, body: 'No such service available!'});
-                return;
-            }
-        
-            service.load++;
-        
-            service.client.query(query,
-            (error, result) => {
-        
-            service.load--;
-        
-            if (error || result.message == "null") {
-                sendFurther(method, body, callback);
-                return;
-            }
-
-            callback(null, {success: true, body: JSON.stringify(result)});
-
-            });
-
-        } else
-            sendFurther(method, body, callback);
-
-    }
-
-}
-
-function sendFurther(method, body, callback) {
-
-    const sType = messageTypes.get(method);
-
-    const service = minLoadService(sType);
-
-    if (service == null || !service.hasOwnProperty('client')) {
-        callback(null, {success: false, body: 'No such service available!'});
-        return;
-    }
-
-    service.load++;
-
-    const parsedBody = JSON.parse(body);
-
-    service.client[method](parsedBody,
-    (error, result) => {
-
-    service.load--;
-
-    if (error) {
-        callback(null, {success: false, body: error});
-        return;
-    }
-
-    if (method == "getProfile" || method == "getPost") {
-        result.username = parsedBody.username;
-        putCache(parsedBody.username, method, result, parsedBody.dozen);
-    }
-
-    callback(null, {success: true, body: JSON.stringify(result)});
-
-    });
-
-}
-
-function putCache(username, method, body, dozen = null) {
-    const message = (method == "getProfile") ? 
-    {
-        username: username,
-        name: body.name,
-        profilePicture: body.profilePicture,
-        posts: new Map(),
-    } : {
-        username: username,
-        name: null,
-        profilePicture: null,
-        posts: { [dozen]: body.postInfo },
-    }
-
-    const query = {
-        method: 'put',
-        message: JSON.stringify(message)
-    };
-
-    const service = minLoadService('cache');
-
-    if (service == null || !service.hasOwnProperty('client')) {
-        callback(null, {success: false, body: 'No such service available!'});
-        return;
-    }
-
-    service.load++;
-
-    service.client.query(query,
-    (resolve, _) => {
-    service.load--;
-    });
-}
-
-function putPicture(call, callback) {
-
-    console.log("[ " + getCurrentTime() + " ]: {putPicture}");
-
-    const post = minLoadService('post');
-
-    const callPost = post.client.putPicture(function(error, response) {
-
-        if (error) {
-            callback(null, {success: response.success, error: error});
-            return;
-        }
-
-        callback(null, {success: response.success, link: response.link});
-    });
-
-    call.on('data', function(dataStream) {
-
-        if (dataStream.fileType) {
-                callPost.write({fileType: dataStream.fileType});
-                callPost.end();
-        } else
-            callPost.write({chunk: dataStream.chunk});
-
-    });
-
-    call.on('end', function() {})
 }
 
 function getCurrentTime() {

@@ -16,7 +16,7 @@ const options = {
 
 var grpcObj = protoLoader.loadSync(PROTO_PATH, options);
 
-const DiscoveryService = grpc.loadPackageDefinition(grpcObj).discovery.DiscoveryService;
+const DiscoveryService = grpc.loadPackageDefinition(grpcObj).services.discovery.DiscoveryService;
 
 const client = new DiscoveryService(
     `${discoveryHost}:${discoveryPort}`,
