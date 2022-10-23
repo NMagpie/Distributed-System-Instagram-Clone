@@ -3,6 +3,8 @@ package main
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.grpc.GrpcClientSettings
 import akka.http.scaladsl.Http
+import cacheManager.CacheManager
+import com.google.common.cache.{CacheBuilder, CacheLoader}
 import services.cache.CacheServiceHandler
 import main.Main.system.dispatcher
 
@@ -16,7 +18,8 @@ import taskLimiter.TlActor
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import scala.concurrent.Await
-import scala.concurrent.duration.Duration
+import scala.concurrent.duration.{Duration, DurationInt}
+import scala.language.postfixOps
 
 /*
 
@@ -30,7 +33,13 @@ object Main {
 
   implicit val system: ActorSystem = ActorSystem("my-system")
 
-  val taskLimiter: ActorRef = system.actorOf(Props(new TlActor(100)), "taskLimiter")
+  val taskLimit: Int = ConfigFactory.load.getInt("taskLimit")
+
+  val maxAge: Int = ConfigFactory.load.getInt("maxAge")
+
+  val taskLimiter: ActorRef = system.actorOf(Props(new TlActor(taskLimit)), "taskLimiter")
+
+  val cacheMng: ActorRef = system.actorOf(Props(new CacheManager(maxAge minutes)), "cacheManager")
 
   val hostname: String = ConfigFactory.load.getString("hostname")
 

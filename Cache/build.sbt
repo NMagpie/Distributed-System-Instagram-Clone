@@ -17,6 +17,7 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-http-spray-json" % akkaHttpVersion,
   "org.json4s" %% "json4s-jackson" % "4.1.0-M1",
   "org.json4s" %% "json4s-native" % "4.1.0-M1",
+  "com.github.cb372" %% "scalacache-guava" % "0.28.0",
 )
 
 enablePlugins(AkkaGrpcPlugin)

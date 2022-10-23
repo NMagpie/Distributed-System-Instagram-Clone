@@ -2,12 +2,13 @@ package rpcImpl
 
 import akka.grpc.GrpcServiceException
 import akka.util.Timeout
-import services.cache._
-import services.{Empty, Status}
 import io.grpc.{Status => grpcStatus}
 import main.Main.system.dispatcher
+import services.cache._
+import services.{Empty, Status}
 import taskLimiter.TlActor._
-import main.Main.{getCurrentTime, taskLimiter}
+import main.Main.{cacheMng, getCurrentTime, taskLimiter}
+import cacheManager.CacheManager
 import org.json4s.native.Serialization.{read, write}
 import org.json4s.{Formats, NoTypeHints, jackson}
 
@@ -15,6 +16,7 @@ import scala.collection.mutable.{Map => MMap}
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
+import scala.util.Success
 
 object RpcImpl {
 
@@ -55,44 +57,47 @@ class RpcImpl extends CacheService {
           case "get" => {
             val query = read[Get](in.message)
 
-            val profile = profiles.getOrElse(query.of, null)
+              val profile = CacheManager.profiles.getOrElse(query.of, null)
 
-            if (profile == null) {
-              taskLimiter ! Free
-              Future.successful(QueryResult("null"))
-            } else {
-              query.what match {
-                case "getProfile" =>
-                  val profileInfo = if (profile.name == null) "null" else write(ProfileInfo(profile.username, profile.name, profile.profilePicture))
+              if (profile == null) {
+                taskLimiter ! Free
+                Future.successful(QueryResult("null"))
+              } else {
+                query.what match {
+                  case "getProfile" =>
+                    val profileInfo = if (profile.name == null) "null" else write(ProfileInfo(profile.username, profile.name, profile.profilePicture))
 
-                  taskLimiter ! Free
-                  Future.successful(QueryResult(profileInfo))
+                    taskLimiter ! Free
+                    Future.successful(QueryResult(profileInfo))
 
-                case "getPost" =>
+                  case "getPost" =>
 
-                  val dozenPosts = profile.posts.getOrElse(query.dozen.get, Array.empty)
+                    val dozenPosts = profile.posts.getOrElse(query.dozen.get, Array.empty)
 
-                  val posts = if (dozenPosts.isEmpty) "null" else write(dozenPosts)
+                    val posts = if (dozenPosts.isEmpty) "null" else write(dozenPosts)
 
-                  taskLimiter ! Free
-                  Future.successful(QueryResult(posts))
+                    taskLimiter ! Free
+                    Future.successful(QueryResult(posts))
 
-                case _ =>
-                  taskLimiter ! Free
-                  Future.failed(new GrpcServiceException(grpcStatus.UNKNOWN.withDescription("Yo mama")))
+                  case _ =>
+                    taskLimiter ! Free
+                    Future.failed(new GrpcServiceException(grpcStatus.UNKNOWN.withDescription("Unknown method")))
+                }
               }
-            }
 
           }
 
           case "put" => {
 
-            val query = read[Profile](in.message)
+            val oldQuery = read[Profile](in.message)
 
-            val profile = profiles.getOrElse(query.username, null)
+            val query = oldQuery.copy(posts = MMap[String, Array[Post]]())
+
+            val profile = CacheManager.profiles.getOrElse(query.username, null)
 
             if (profile == null) {
-              profiles.put(query.username, query)
+              cacheMng ! query
+              //profiles.put(query.username, query)
             } else {
               val username = if (query.username != null) query.username else profile.username
               val name = if (query.name != null) query.name else profile.name
@@ -106,7 +111,8 @@ class RpcImpl extends CacheService {
 
               val updatedProfile = Profile(username, name, profilePicture, mergedMap)
 
-              profiles.put(username, updatedProfile)
+              cacheMng ! updatedProfile
+              //profiles.put(username, updatedProfile)
             }
 
             taskLimiter ! Free
@@ -115,7 +121,7 @@ class RpcImpl extends CacheService {
 
           case _ =>
             taskLimiter ! Free
-            Future.failed(new GrpcServiceException(grpcStatus.UNKNOWN.withDescription("Yo mama")))
+            Future.failed(new GrpcServiceException(grpcStatus.UNKNOWN.withDescription("Unknown method")))
         }
 
       } catch {
