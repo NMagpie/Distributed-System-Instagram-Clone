@@ -8,10 +8,12 @@ import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.pattern.ask
+import akka.stream.ConnectionException
 import akka.stream.scaladsl.{Flow, Source}
 import akka.util.{ByteString, Timeout}
 import com.google.protobuf.{ByteString => pByteString}
 import com.typesafe.config.ConfigFactory
+import io.grpc.StatusRuntimeException
 import main.Main.system.dispatcher
 import org.json4s.jackson.Serialization
 import org.json4s.{FieldSerializer, Formats, NoTypeHints}
@@ -49,8 +51,6 @@ object Main {
 
   case class Profile(username: String, name: String, profilePicture: String, posts: Map[String, Array[PostInfo]])
 
-  case class ProfileInfo(username: String, name: String, profilePicture: String)
-
   implicit val system: ActorSystem = ActorSystem("my-system")
 
   implicit val formats: Formats = Serialization.formats(NoTypeHints) + FieldSerializer[GeneratedMessage]()
@@ -65,24 +65,40 @@ object Main {
 
   val discoveryPort: Int = ConfigFactory.load.getInt("discoveryPort")
 
-  val clientSettings: GrpcClientSettings = GrpcClientSettings.connectToServiceAt(discoveryHost, discoveryPort).withTls(false)
+  val clientSettings: GrpcClientSettings = GrpcClientSettings
+    .connectToServiceAt(discoveryHost, discoveryPort)
+    .withTls(false)
+    //.withConnectionAttempts(10)
 
   val discovery: DiscoveryService = DiscoveryServiceClient(clientSettings)
 
-  var Array(authServices : Array[AuthService], postServices: Array[PostService], cacheService: CacheService) = {
+  var authServices = Array.empty[AuthService]
 
-  val serviceMap = Await.result(discovery.discover(ServiceInfo("gateway", hostname, grpcPort)), Duration.create(15, "min"))
+  var postServices = Array.empty[PostService]
 
-  val authServices = serviceMap.auth.map(service => AuthService(service.`type`, service.hostname, service.port)).toArray
+  var cacheService : CacheService = null
 
-  val postServices = serviceMap.post.map(service => PostService(service.`type`, service.hostname, service.port)).toArray
+    try {
 
-  val cacheService = if (serviceMap.cache.nonEmpty) {
-    serviceMap.cache.map(service => CacheService(service.`type`, service.hostname, service.port)).head
-  } else null
+      val serviceMap = Await.result(discovery.discover(ServiceInfo("gateway", hostname, grpcPort)), Duration.create(15, "min"))
 
-  Array(authServices, postServices, cacheService)
-  }
+      val authServices = serviceMap.auth.map(service => AuthService(service.`type`, service.hostname, service.port)).toArray
+
+      val postServices = serviceMap.post.map(service => PostService(service.`type`, service.hostname, service.port)).toArray
+
+      val cacheService = if (serviceMap.cache.nonEmpty) {
+        serviceMap.cache.map(service => CacheService(service.`type`, service.hostname, service.port)).head
+      } else null
+
+      this.authServices = authServices
+
+      this.postServices = postServices
+
+      this.cacheService = cacheService
+
+    } catch {
+      case _: Exception =>
+    }
 
   val serviceManager: ActorRef = system.actorOf(Props(new ServiceManager()), "serviceManager")
 
@@ -127,7 +143,9 @@ object Main {
 
               val authService = authResult.client
 
-              val reply = authService.client.register(UserData(authData))
+              val reply = call (authService, {
+                authService.client.register(UserData(authData))
+              })
 
               onComplete(reply) {
                 case Success(replyResult) =>
@@ -149,7 +167,9 @@ object Main {
 
                                 if (!checkFileType(fileType) || file == null) {
 
-                                  val reply = postService.client.putProfile(ProfilePutInfo(username, name))
+                                  val reply = call(postService, {
+                                    postService.client.putProfile(ProfilePutInfo(username, name))
+                                  })
                                   response(reply)
 
                                 }
@@ -163,10 +183,14 @@ object Main {
                                   .via(otherChunk)
                                   .concat(Source.single("1".getBytes().toSeq).via(eof))
 
-                                onComplete(postService.client.putPicture(photo)) {
+                                onComplete(call(postService, {
+                                  postService.client.putPicture(photo)
+                                })) {
 
                                   case Success(result) =>
-                                    val reply = postService.client.putProfile(ProfilePutInfo(username, name, result.link.get))
+                                    val reply = call (postService, {
+                                      postService.client.putProfile(ProfilePutInfo(username, name, result.link.get))
+                                    })
                                     serviceManager ! DecLoad(Left(authService))
                                     serviceManager ! DecLoad(Right(postService))
                                     response(reply)
@@ -215,7 +239,9 @@ object Main {
 
             println(s"[$getCurrentTime]: {login}\t$authData")
 
-            val reply = authService.client.auth(UserData(authData))
+            val reply = call (authService, {
+              authService.client.auth(UserData(authData))
+            })
 
             serviceManager ! DecLoad(Left(authService))
 
@@ -232,10 +258,12 @@ object Main {
   val getPosts: Route = pathPrefix("profile" / Segment / IntNumber) {
     case (username, dozen) =>
 
-      val query = cacheService.client.query(Query("get",
-        s"{\"what\": \"getPost\"," +
-        s" \"of\": \"$username\"," +
-        s"\"dozen\": \"$dozen\"}"))
+      val query = call (cacheService, {
+        cacheService.client.query(Query("get",
+          s"{\"what\": \"getPost\"," +
+            s" \"of\": \"$username\"," +
+            s"\"dozen\": \"$dozen\"}"))
+      })
 
       onComplete(query) {
 
@@ -261,7 +289,9 @@ object Main {
 
                 val postService = postResult.client
 
-                val reply = postService.client.getPost(PostParams(username, dozen))
+                val reply = call (postService, {
+                  postService.client.getPost(PostParams(username, dozen))
+                })
 
                 serviceManager ! DecLoad(Right(postService))
 
@@ -270,7 +300,9 @@ object Main {
 
                     val postInfo = Profile(username, null, null, Map(s"$dozen" -> replyResult.postInfo.toArray))
 
-                    cacheService.client.query(Query("put", Serialization.write(postInfo)))
+                    call (cacheService, {
+                      cacheService.client.query(Query("put", Serialization.write(postInfo)))
+                    })
                 }
 
                 response(reply)
@@ -289,9 +321,11 @@ object Main {
   val getProfile: Route = path("profile" / Segment) {
     username =>
 
-      val query = cacheService.client.query(Query("get",
-        s"{\"what\": \"getProfile\"," +
-          s" \"of\": \"$username\"}"))
+      val query = call (cacheService, {
+        cacheService.client.query(Query("get",
+          s"{\"what\": \"getProfile\"," +
+            s" \"of\": \"$username\"}"))
+      })
 
       onComplete(query) {
 
@@ -317,7 +351,9 @@ object Main {
 
                 println(s"[$getCurrentTime]: {getProfile}\t$username")
 
-                val reply = postService.client.getProfile(Username(username))
+                val reply = call (postService, {
+                  postService.client.getProfile(Username(username))
+                })
 
                 serviceManager ! DecLoad(Right(postService))
 
@@ -326,7 +362,9 @@ object Main {
 
                     val postInfo = Profile(username, replyResult.name, replyResult.profilePicture, null)
 
-                    cacheService.client.query(Query("put", Serialization.write(postInfo)))
+                    call (cacheService, {
+                      cacheService.client.query(Query("put", Serialization.write(postInfo)))
+                    })
                 }
 
                 response(reply)
@@ -354,7 +392,9 @@ object Main {
 
               val authService = authResult.client
 
-              val reply = authService.client.whoIsThis(AuthKey(key))
+              val reply = call (authService, {
+                authService.client.whoIsThis(AuthKey(key))
+              })
 
               onComplete(reply) {
                 case Success(usernameM) =>
@@ -391,11 +431,15 @@ object Main {
 
                               val postService = postResult.client
 
-                              onComplete(postService.client.putPicture(photo)) {
+                              onComplete(call (postService, {
+                                postService.client.putPicture(photo)
+                              })) {
 
                                 case Success(result) =>
 
-                                  val reply = postService.client.putPost(PostPutInfo(username, result.link.get, text))
+                                  val reply = call (postService, {
+                                    postService.client.putPost(PostPutInfo(username, result.link.get, text))
+                                  })
 
                                   serviceManager ! DecLoad(Right(postService))
 
@@ -425,7 +469,6 @@ object Main {
 
           }
 
-        ////////////////////////////////////////
       }
     }
   }
@@ -452,30 +495,34 @@ object Main {
           case "cache" =>
 
             if (sHostname == cacheService.hostname && intPort == cacheService.port)
-              response(cacheService.client.getStatus(Empty()))
+              response(call (cacheService, {
+                cacheService.client.getStatus(Empty())
+              }))
             else
               complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, "Such service does not exist"))
 
           case "auth" =>
 
-            val authServiceFiltered = authServices.filter(aService => {
-              aService.hostname == sHostname && aService.port == intPort
-            })
+            val authServiceFiltered = filterAuth(sHostname, intPort)
 
-            if (authServiceFiltered.nonEmpty)
-              response(authServiceFiltered(0).client.getStatus(Empty()))
-            else
+            if (authServiceFiltered.nonEmpty) {
+              val authService = authServiceFiltered(0)
+              response(call (authService, {
+                authService.client.getStatus(Empty())
+              }))
+            } else
               complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, "Such service does not exist"))
 
           case "post" =>
 
-            val postServiceFiltered = postServices.filter(pService => {
-              pService.hostname == sHostname && pService.port == intPort
-            })
+            val postServiceFiltered = filterPost(sHostname, intPort)
 
-            if (postServiceFiltered.nonEmpty)
-              response(postServiceFiltered(0).client.getStatus(Empty()))
-            else
+            if (postServiceFiltered.nonEmpty) {
+              val postService = postServiceFiltered(0)
+              response(call (postService, {
+                postService.client.getStatus(Empty())
+              }))
+            } else
               complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, "Such service does not exist"))
 
           case "discovery" =>
@@ -521,6 +568,41 @@ object Main {
   def getCurrentTime: String = {
     val timestamp = LocalDateTime.now()
     DateTimeFormatter.ofPattern("HH:mm:ss").format(timestamp)
+  }
+
+  def call[T, A](service: A, code: => Future[T]): Future[T] = {
+      code.map(_ => {
+        serviceManager ! OK(service)
+      }).failed.map {
+        case e: StatusRuntimeException =>
+          serviceManager ! Fail(service)
+          Future.failed(e)
+      }
+
+    code
+
+//    try {
+//      code.map(_ => {
+//        serviceManager ! OK(service)
+//      })
+//      code
+//    } catch {
+//      case e: StatusRuntimeException =>
+//        serviceManager ! Fail(service)
+//        Future.failed(e)
+//    }
+}
+
+  def filterAuth(hostname: String, port: Int): Array[AuthService] = {
+    authServices.filter(aService => {
+      aService.hostname == hostname && aService.port == port
+    })
+  }
+
+  def filterPost(hostname: String, port: Int): Array[PostService] = {
+    postServices.filter(aService => {
+      aService.hostname == hostname && aService.port == port
+    })
   }
 
 }
