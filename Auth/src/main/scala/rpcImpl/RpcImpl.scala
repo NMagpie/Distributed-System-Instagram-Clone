@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets
 import java.util.Base64
 import scala.concurrent.duration.DurationInt
 import scala.language.postfixOps
+import scala.util.Success
 
 class RpcImpl extends AuthenticationService {
 
@@ -60,8 +61,6 @@ class RpcImpl extends AuthenticationService {
     if (result.result) try {
 
       println(s"[$getCurrentTime]: [${result.load} of ${result.limit}] {auth}\t${in.encode}")
-
-      //Thread.sleep(100)
 
       val Array(username, password) = new String(Base64.getDecoder.decode(in.encode), StandardCharsets.UTF_8).split(":")
       val statement = connection.createStatement

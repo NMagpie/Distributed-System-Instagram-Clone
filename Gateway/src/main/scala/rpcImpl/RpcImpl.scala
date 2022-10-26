@@ -1,7 +1,8 @@
 package rpcImpl
 
 import main.Main.system.dispatcher
-import main.Main.{authServices, cacheService, getCurrentTime, postServices}
+import main.Main.{authServices, cacheService, getCurrentTime, postServices, serviceManager}
+import services.ServiceManager.AddService
 import services.Services.{AuthService, CacheService, PostService}
 import services.{Empty, ServiceInfo, Status}
 import services.gateway.GatewayService
@@ -21,17 +22,7 @@ class RpcImpl extends GatewayService {
 
     println(s"[$getCurrentTime]: {newService}")
 
-    in.`type` match {
-      case "cache" =>
-        cacheService = CacheService(in.`type`, in.hostname, in.port)
-
-      case "auth" =>
-        authServices = authServices :+ AuthService(in.`type`, in.hostname, in.port)
-
-      case "post" =>
-        postServices = postServices :+ PostService(in.`type`, in.hostname, in.port)
-
-    }
+    serviceManager ! AddService(in.`type`, in.hostname, in.port)
 
     Future(Empty())
   }
