@@ -1,15 +1,16 @@
 package services
 
-import akka.actor.{Actor, Cancellable, Scheduler}
+import akka.actor.{Actor, Cancellable}
+import logging.LogHelper.logMessage
 import main.Main
+import main.Main.system.dispatcher
+import main.Main.{authServices, cacheService, postServices, system}
+import services.ServiceManager._
 import services.Services.{AuthService, CacheService, PostService}
-import services.ServiceManager.{AddService, AuthResult, DecLoad, Fail, GetAuth, GetPost, OK, PostResult}
-import main.Main.{authServices, cacheService, filterAuth, filterPost, getCurrentTime, hostname, postServices, serviceManager, system}
 
 import scala.collection.mutable.{Map => MMap}
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.language.postfixOps
-import main.Main.system.dispatcher
 
 object ServiceManager {
   case class GetAuth()
@@ -68,7 +69,7 @@ class ServiceManager extends Actor {
           service match {
             case service: AuthService =>
               val timer = timers.getOrElseUpdate("auth" + service.hostname + service.port, system.scheduler.scheduleOnce(maxTime) {
-                println("Time has passed!")
+                //println("Time has passed!")
                 service.errors = 0
                 timers.remove("auth" + service.hostname + service.port)
               })
@@ -86,9 +87,9 @@ class ServiceManager extends Actor {
 
                 Main.discovery.removeService(ServiceInfo("auth", service.hostname, service.port))
 
-                println(s"[$getCurrentTime]: {removed}\tauth:${service.hostname}:${service.port}: errors[${service.errors} of $errorLimit]")
+                logMessage(s"{removed}\tauth:${service.hostname}:${service.port}: errors[${service.errors} of $errorLimit]")
               } else {
-                println(s"[$getCurrentTime]: {errors}\tauth:${service.hostname}:${service.port}: errors[${service.errors} of $errorLimit]")
+                logMessage(s"{errors}\tauth:${service.hostname}:${service.port}: errors[${service.errors} of $errorLimit]")
               }
 
 

@@ -1,3 +1,5 @@
+const logger = require("./logger");
+
 function promisify(fn) {
     return function(...args) {
         return new Promise((resolve, reject) => {
@@ -10,12 +12,6 @@ function promisify(fn) {
     };
 }
 
-function getCurrentTime() {
-    const now = new Date();
-
-    return now.getHours() + ":" + now.getMinutes() + ":" + now.getSeconds();
-}
-
 const limit = process.env.LIMIT;
 
 function taskLimiter(method, postServer) {
@@ -24,7 +20,8 @@ function taskLimiter(method, postServer) {
         const activeSessions = postServer.callTracker.callsStarted - (postServer.callTracker.callsSucceeded + postServer.callTracker.callsFailed);
 
         if (activeSessions > limit) {
-            console.log("[ " + getCurrentTime() + ` ]: {${method.name}}\tConcurrent task limit exceeded!`);
+            logger.info(`{${method.name}}\tConcurrent task limit exceeded!`);
+            //console.log("[ " + getCurrentTime() + ` ]: {${method.name}}\tConcurrent task limit exceeded!`);
 
             callback({
                 message: '429 Too many requests',
@@ -33,7 +30,8 @@ function taskLimiter(method, postServer) {
         return;
         }
 
-        console.log(`[${getCurrentTime()}]: [${activeSessions} of ${limit}] {${method.name}}\t${JSON.stringify(body.request)}`)
+        logger.info(`[${activeSessions} of ${limit}] {${method.name}}\t${JSON.stringify(body.request)}`);
+        //console.log(`[${getCurrentTime()}]: [${activeSessions} of ${limit}] {${method.name}}\t${JSON.stringify(body.request)}`)
 
         const newCallback = (meta, body) => {
             callback(meta, body);
@@ -46,6 +44,5 @@ function taskLimiter(method, postServer) {
 
 module.exports = {
     promisify,
-    getCurrentTime,
     taskLimiter,
 }

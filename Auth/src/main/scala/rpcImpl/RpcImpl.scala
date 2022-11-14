@@ -3,21 +3,20 @@ package rpcImpl
 import akka.grpc.GrpcServiceException
 import akka.pattern.ask
 import akka.util.Timeout
+import db.DBConnector.connection
+import io.grpc.{Status => grpcStatus}
+import logging.LogHelper.logMessage
+import main.Main.system.dispatcher
 import services.authentication._
 import services.{Empty, Status}
 import taskLimiter.TlActor._
-
-import scala.concurrent.{Await, Future}
-import main.Main.{getCurrentTime, taskLimiter}
-import db.DBConnector.connection
-import main.Main.system.dispatcher
-import io.grpc.{Status => grpcStatus}
+import main.Main.taskLimiter
 
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 import scala.concurrent.duration.DurationInt
+import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
-import scala.util.Success
 
 class RpcImpl extends AuthenticationService {
 
@@ -31,7 +30,7 @@ class RpcImpl extends AuthenticationService {
 
     if (result.result) try {
 
-      println(s"[$getCurrentTime]: [${result.load} of ${result.limit}] {isAuth}\t${in.key}")
+      logMessage(s"[${result.load} of ${result.limit}] {isAuth}\t${in.key}")
 
       val key = in.key
 
@@ -60,7 +59,7 @@ class RpcImpl extends AuthenticationService {
 
     if (result.result) try {
 
-      println(s"[$getCurrentTime]: [${result.load} of ${result.limit}] {auth}\t${in.encode}")
+      logMessage(s"[${result.load} of ${result.limit}] {auth}\t${in.encode}")
 
       val Array(username, password) = new String(Base64.getDecoder.decode(in.encode), StandardCharsets.UTF_8).split(":")
       val statement = connection.createStatement
@@ -91,7 +90,7 @@ class RpcImpl extends AuthenticationService {
 
     if (result.result) try {
 
-      println(s"[$getCurrentTime]: [${result.load} of ${result.limit}] {register}\t${in.encode}")
+      logMessage(s"[${result.load} of ${result.limit}] {register}\t${in.encode}")
 
       val Array(username, password) = new String(Base64.getDecoder.decode(in.encode), StandardCharsets.UTF_8).split(":")
       val statement = connection.createStatement
@@ -132,7 +131,7 @@ class RpcImpl extends AuthenticationService {
 
     if (result.result) try {
 
-      println(s"[$getCurrentTime]: [${result.load} of ${result.limit}] {getStatus}")
+      logMessage(s"[${result.load} of ${result.limit}] {getStatus}")
 
       val status = s"Server Type: Authentication\nHostname: ${main.Main.hostname}\nPort: ${main.Main.port}"
 
@@ -155,7 +154,7 @@ class RpcImpl extends AuthenticationService {
 
     if (result.result) try {
 
-      println(s"[$getCurrentTime]: [${result.load} of ${result.limit}] {whoIsThis}\t${in.key}")
+      logMessage(s"[${result.load} of ${result.limit}] {whoIsThis}\t${in.key}")
 
       val statement = connection.createStatement
       val rs = statement.executeQuery("SELECT username FROM auth_db.users WHERE users.key ='%s'".format(in.key))

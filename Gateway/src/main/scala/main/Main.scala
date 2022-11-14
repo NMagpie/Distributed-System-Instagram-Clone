@@ -8,12 +8,13 @@ import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.pattern.ask
-import akka.stream.ConnectionException
 import akka.stream.scaladsl.{Flow, Source}
 import akka.util.{ByteString, Timeout}
 import com.google.protobuf.{ByteString => pByteString}
 import com.typesafe.config.ConfigFactory
 import io.grpc.StatusRuntimeException
+import logging.LogHelper
+import logging.LogHelper.{logError, logMessage}
 import main.Main.system.dispatcher
 import org.json4s.jackson.Serialization
 import org.json4s.{FieldSerializer, Formats, NoTypeHints}
@@ -114,7 +115,8 @@ object Main {
 
     val bindingFuture = Http().newServerAt(hostname, httpPort).bind(route)
 
-    println(s"Server now online.\nPress RETURN to stop...")
+    logMessage("Server now online.\nPress RETURN to stop...")
+
     StdIn.readLine()
     bindingFuture
       .flatMap(_.unbind())
@@ -136,7 +138,7 @@ object Main {
 
           val username = new String(Base64.getDecoder.decode(authData), StandardCharsets.UTF_8).split(':')(0)
 
-          println(s"[$getCurrentTime]: {register}\t$username")
+          logMessage(s"{register}\t$username")
           onComplete(authFuture) {
 
             case Success(authResult) =>
@@ -195,13 +197,13 @@ object Main {
                                     serviceManager ! DecLoad(Right(postService))
                                     response(reply)
 
-                                  case Failure(e) => e.printStackTrace()
+                                  case Failure(e) => logError(e)
                                     serviceManager ! DecLoad(Left(authService))
                                     serviceManager ! DecLoad(Right(postService))
                                     complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
                                 }
 
-                              case Failure(e) => e.printStackTrace()
+                              case Failure(e) => logError(e)
                                 serviceManager ! DecLoad(Left(authService))
                                 complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
                             }
@@ -212,12 +214,12 @@ object Main {
                     complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, replyResult.toString))
                   }
 
-                case Failure(e) => e.printStackTrace()
+                case Failure(e) => logError(e)
                   serviceManager ! DecLoad(Left(authService))
                   complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
               }
 
-            case Failure(e) => e.printStackTrace()
+            case Failure(e) => logError(e)
               complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
           }
       }
@@ -237,7 +239,7 @@ object Main {
 
             val authService = authResult.client
 
-            println(s"[$getCurrentTime]: {login}\t$authData")
+            logMessage(s"{login}\t$authData")
 
             val reply = call (authService, {
               authService.client.auth(UserData(authData))
@@ -247,7 +249,7 @@ object Main {
 
             response(reply)
 
-          case Failure(e) => e.printStackTrace()
+          case Failure(e) => logError(e)
             complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
         }
 
@@ -285,7 +287,7 @@ object Main {
 
               case Success(postResult) =>
 
-                println(s"[$getCurrentTime]: {getPosts}\t$username\t$dozen")
+                logMessage(s"{getPosts}\t$username\t$dozen")
 
                 val postService = postResult.client
 
@@ -307,12 +309,12 @@ object Main {
 
                 response(reply)
 
-              case Failure(e) => e.printStackTrace()
+              case Failure(e) => logError(e)
                 complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
             }
           }
 
-        case Failure(e) => e.printStackTrace()
+        case Failure(e) => logError(e)
           complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
       }
 
@@ -349,7 +351,7 @@ object Main {
 
                 val postService = postResult.client
 
-                println(s"[$getCurrentTime]: {getProfile}\t$username")
+                logMessage(s"{getProfile}\t$username")
 
                 val reply = call (postService, {
                   postService.client.getProfile(Username(username))
@@ -369,13 +371,13 @@ object Main {
 
                 response(reply)
 
-              case Failure(e) => e.printStackTrace()
+              case Failure(e) => logError(e)
                 complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
             }
 
           }
 
-        case Failure(e) => e.printStackTrace()
+        case Failure(e) => logError(e)
           complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
       }
 
@@ -404,7 +406,7 @@ object Main {
                   formFields("text") {
                     text =>
 
-                      println(s"[$getCurrentTime]: {putPost}\t$username\t$text")
+                      logMessage(s"{putPost}\t$username\t$text")
 
                       fileUpload("photo") {
                         case (metaData, file) =>
@@ -445,26 +447,26 @@ object Main {
 
                                   response(reply)
 
-                                case Failure(e) => e.printStackTrace()
+                                case Failure(e) => logError(e)
 
                                   serviceManager ! DecLoad(Right(postService))
 
                                   complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
                               }
 
-                            case Failure(e) => e.printStackTrace()
+                            case Failure(e) => logError(e)
                               complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
 
                           }
                       }
                   }
 
-                case Failure(e) => e.printStackTrace()
+                case Failure(e) => logError(e)
                   complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
 
               }
 
-            case Failure(e) => e.printStackTrace()
+            case Failure(e) => logError(e)
               complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
 
           }
@@ -480,7 +482,7 @@ object Main {
 
         val intPort = sPort.toInt
 
-        println(s"[$getCurrentTime]: {getStatus}\t$service")
+        logMessage(s"{getStatus}\t$service")
 
         sType match {
           case "gateway" =>
@@ -571,26 +573,23 @@ object Main {
   }
 
   def call[T, A](service: A, code: => Future[T]): Future[T] = {
-      code.map(_ => {
-        serviceManager ! OK(service)
-      }).failed.map {
-        case e: StatusRuntimeException =>
-          serviceManager ! Fail(service)
-          Future.failed(e)
-      }
+    try {
+      if (service == null)
+        return Future.failed(new Exception("No such service available, please try again later"))
 
-    code
+        code.map(_ => {
+          serviceManager ! OK(service)
+        }).failed.map {
+          case e: StatusRuntimeException =>
+            serviceManager ! Fail(service)
+            Future.failed(e)
+        }
 
-//    try {
-//      code.map(_ => {
-//        serviceManager ! OK(service)
-//      })
-//      code
-//    } catch {
-//      case e: StatusRuntimeException =>
-//        serviceManager ! Fail(service)
-//        Future.failed(e)
-//    }
+        code
+
+    } catch {
+      case e: Exception => Future.failed(e)
+    }
 }
 
   def filterAuth(hostname: String, port: Int): Array[AuthService] = {
