@@ -6,11 +6,11 @@ import akka.http.scaladsl.Http
 import services.authentication.AuthenticationServiceHandler
 import com.typesafe.config.ConfigFactory
 import db.DBConnector
+import logging.LogHelper.logMessage
 import services.discovery._
 import services.ServiceInfo
 import rpcImpl.RpcImpl
 import taskLimiter.TlActor
-
 import main.Main.system.dispatcher
 
 import java.time.LocalDateTime
@@ -51,7 +51,7 @@ object Main {
 
     val bindServer = Http().newServerAt(hostname, port).bind(AuthenticationServiceHandler(new RpcImpl))
 
-    println(s"Server now online.\nPress RETURN to stop...")
+    logMessage(s"Server now online.\nPress RETURN to stop...")
     StdIn.readLine()
     bindServer
       .flatMap(_.unbind())

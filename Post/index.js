@@ -2,6 +2,8 @@ require('dotenv').config();
 
 const crypto = require('crypto');
 
+const logger = require("./logger");
+
 const hostname = process.env.HOSTNAME;
 const port = process.env.PORT;
 const httpPort = process.env.HTTPPORT;
@@ -11,7 +13,7 @@ const dbUser = process.env.DBUSER;
 const dbPassword = process.env.DBPASSWORD;
 const database = process.env.DB;
 
-const {promisify, getCurrentTime, taskLimiter} = require("./util");
+const {promisify, taskLimiter} = require("./util");
 
 const discoveryClient = require("./discoveryClient");
 
@@ -33,7 +35,8 @@ const con = mysql.createConnection({
 
 con.connect(function(err) {
     if (err) throw err;
-    console.log("[ " + getCurrentTime() + " ]: \tDB Connected!");
+    logger.info("DB Connected!");
+    //console.log("[ " + getCurrentTime() + " ]: \tDB Connected!");
 });
 
 const grpc = require("@grpc/grpc-js");
@@ -67,20 +70,24 @@ postServer.bindAsync(
     `${hostname}:${port}`,
     grpc.ServerCredentials.createInsecure(),
     (error, port) => {
-        console.log("[ " + getCurrentTime() + " ]: \t" + `Server running at ${hostname}:${port}`);
+        logger.info(`Server running at ${hostname}:${port}`);
+        //console.log("[ " + getCurrentTime() + " ]: \t" + `Server running at ${hostname}:${port}`);
         postServer.start();
     }
 );
 
 (async function () {
     await discoveryClient.discover({type: "post", hostname: hostname, port: port}, (error, result) => {
-        if (error) console.error(error);
+        if (error) logger.info(error);
+        //console.error(error);
     })
 }());
 
 function getProfile(username, callback) {
 
             const profUsername = username.request.username;
+
+            logger.info(`{getProfile}\t${username}`);
 
             //example if service is sending the result for too long
 
@@ -98,7 +105,8 @@ function getProfile(username, callback) {
 
                 })
                 .catch(error => {
-                    console.error(error);
+                    //console.error(error);
+                    logger.info(error);
                 });
 
             //})
@@ -106,7 +114,9 @@ function getProfile(username, callback) {
 
 function getPost(postParams, callback) {
 
-            const {username, dozen} = postParams.request
+            const {username, dozen} = postParams.request;
+
+            logger.info(`{getPost}\t${username}\t${dozen}`);
 
             query(`(SELECT username, photo, text FROM post_db.posts WHERE username = \'${username}\' LIMIT 10 OFFSET ${dozen*10}) UNION ALL SELECT NULL, NULL, NULL LIMIT 10`)
             .then((result, _) => {
@@ -120,7 +130,8 @@ function getPost(postParams, callback) {
 
             })
             .catch(error => {
-                console.error(error);
+                //console.error(error);
+                logger.info(error);
             });
 
 }
@@ -130,6 +141,8 @@ function getStatus(empty, callback) {
             //example if service is sending the result for too long
 
             //new Promise(resolve => setTimeout(resolve, 1_500)).then(() => {
+
+            logger.info("{getStatus}");
 
             const status = {
                 message: `Server Type: post\nHostname: ${hostname}\nPort: ${port}`
@@ -149,6 +162,8 @@ function putPost(postInfo, callback) {
 
             const username = postInfo.request.username;
 
+            logger.info(`{putPost}\t${username}`);
+
             query(`INSERT INTO post_db.posts (username, photo, text) VALUES ('${username}', '${photo}', '${text}')`)
             .then((result) => {
                 if (result?.error)
@@ -157,7 +172,8 @@ function putPost(postInfo, callback) {
                     callback( null, {success: true,})
                 })
             .catch(error => {
-                console.error(error);
+                //console.error(error);
+                logger.info(error);
                 callback(null, {success: false, error: error});
             });
 
@@ -170,6 +186,8 @@ function putProfile(profileInfo, callback) {
             const name = profileInfo.request.name;
         
             const avatar = profileInfo.request.avatar;
+
+            logger.info(`{putProfile}\t${username}`);
         
             query(`INSERT INTO post_db.profiles (username, name, profilePicture) VALUES ('${username}', '${name}', '${avatar}')`)
             .then((result) => {
@@ -179,7 +197,8 @@ function putProfile(profileInfo, callback) {
                     callback( null, {success: true,});
                 })
             .catch(error => {
-                console.error(error);
+                //console.error(error);
+                logger.info(error);
                 callback(null, {success: false, body: error});
             });
 
@@ -187,7 +206,8 @@ function putProfile(profileInfo, callback) {
 
 function putPicture(call, callback) {
 
-    console.log("[ " + getCurrentTime() + " ]: {putPicture}");
+    logger.info("{putPicture}");
+    //console.log("[ " + getCurrentTime() + " ]: {putPicture}");
 
     var pictureData = [];
 
@@ -210,7 +230,8 @@ function putPicture(call, callback) {
         fs.writeFile(`./public/images/${filename}`, combinedData, 'binary', (error) => {
 
             if (error) {
-                console.log(error);
+                //console.log(error);
+                logger.info(error);
                 callback(null, {success: false, error: error});
                 return;
             }

@@ -1,6 +1,7 @@
 package db
 
 import com.typesafe.config.ConfigFactory
+import logging.LogHelper.{logError, logMessage}
 
 import java.sql.{Connection, DriverManager}
 
@@ -13,9 +14,9 @@ object DBConnector {
   try {
     Class.forName(driver)
     connection = DriverManager.getConnection(url, username, password)
-    println("DB Connected successfully!")
+    logMessage("DB Connected successfully!")
   } catch {
-    case e: Exception => e.printStackTrace()
+    case e: Exception => logError(e)
   }
 
   def closeConnection(): Unit =
