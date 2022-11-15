@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="info" name="ti-analytics">
+    <Appenders>
+        <Socket name="socket" host="${sys:logHost}" port="${sys:logPort}">
+            <JsonTemplateLayout eventTemplateUri="classpath:example.json">
+                <EventTemplateAdditionalField key="sType" value="${sys:sType}"/>
+                <EventTemplateAdditionalField key="hostname" value="${sys:host}"/>
+                <EventTemplateAdditionalField key="port" value="${sys:port}"/>
+            </JsonTemplateLayout>
+
+<!--            <JsonLayout properties="true" compact="true" endOfLine="\n" eventEol="true">-->
+<!--                <KeyValuePair key="@timestamp" value="${date:yyyy-MM-dd'T'HH:mm:ss.SSSZ}" />-->
+<!--            </JsonLayout>-->
+        </Socket>
+
+<!--        <File name="FileAppender" filename="./logs/myapp.log">-->
+<!--            <JSONLayout compact="true" eventEol="true">-->
+<!--                <KeyValuePair key="@timestamp" value="${date:yyyy-MM-dd'T'HH:mm:ss.SSSZ}" />-->
+<!--            </JSONLayout>-->
+<!--        </File>-->
+    </Appenders>
+    <Loggers>
+        <Root level="info">
+            <AppenderRef ref="socket"/>
+        </Root>
+<!--        <Root level="trace">-->
+<!--            <AppenderRef ref="FileAppender"/>-->
+<!--        </Root>-->
+    </Loggers>
+</Configuration>

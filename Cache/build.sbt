@@ -1,4 +1,4 @@
-ThisBuild / version := "0.1.0-SNAPSHOT"
+ThisBuild / version := "latest"
 
 ThisBuild / scalaVersion := "2.13.8"
 
@@ -21,6 +21,35 @@ libraryDependencies ++= Seq(
 )
 
 enablePlugins(AkkaGrpcPlugin)
+
+enablePlugins(JavaAppPackaging)
+
+enablePlugins(DockerPlugin)
+
+import com.typesafe.sbt.packager.docker._
+
+dockerBaseImage := "openjdk:18-alpine"
+
+dockerCommands ++= Seq(
+  Cmd("USER", "root"),
+  ExecCmd("RUN", "apk", "update"),
+  ExecCmd("RUN", "apk", "add", "bash")
+)
+
+dockerExposedPorts := {
+  import com.typesafe.config.ConfigFactory
+
+  val resourceDir = (resourceDirectory in Compile).value
+  val appConfig = ConfigFactory.parseFile(resourceDir / "applicationDocker.conf")
+
+  val config = ConfigFactory.load(appConfig)
+
+  Seq(
+  config.getInt("port")
+  )
+}
+
+bashScriptExtraDefines += """addJava "-Dconfig.resource=applicationDocker.conf""""
 
 lazy val root = (project in file("."))
   .settings(

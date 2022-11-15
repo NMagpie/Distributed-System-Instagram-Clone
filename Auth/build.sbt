@@ -15,6 +15,10 @@ libraryDependencies ++= Seq(
   "org.scalameta" %% "munit" % "0.7.29" % Test,
   "org.json4s" %% "json4s-jackson" % "4.1.0-M1",
   "org.json4s" %% "json4s-native" % "4.1.0-M1",
+  "org.apache.logging.log4j" % "log4j-layout-template-json" % "2.19.0" % "runtime",
+  "org.apache.logging.log4j" %% "log4j-api-scala" % "12.0",
+  "org.apache.logging.log4j" % "log4j-api" % "2.19.0",
+  "org.apache.logging.log4j" % "log4j-core" % "2.19.0" % Runtime,
   "ch.qos.logback" % "logback-classic" % "1.4.1" % Runtime,
   "mysql" % "mysql-connector-java" % "8.0.30",
   "com.typesafe.akka" %% "akka-http-spray-json" % akkaHttpVersion,
@@ -26,9 +30,32 @@ enablePlugins(JavaAppPackaging)
 
 enablePlugins(DockerPlugin)
 
+import com.typesafe.sbt.packager.docker._
+
+dockerBaseImage := "openjdk:18-alpine"
+
+dockerCommands ++= Seq(
+  Cmd("USER", "root"),
+  ExecCmd("RUN", "apk", "update"),
+  ExecCmd("RUN", "apk", "add", "bash")
+)
+
+dockerExposedPorts := {
+  import com.typesafe.config.ConfigFactory
+
+  val resourceDir = (resourceDirectory in Compile).value
+  val appConfig = ConfigFactory.parseFile(resourceDir / "applicationDocker.conf")
+
+  val config = ConfigFactory.load(appConfig)
+
+  Seq(
+    config.getInt("port")
+  )
+}
+
+bashScriptExtraDefines += """addJava "-Dconfig.resource=applicationDocker.conf""""
+
 lazy val root = (project in file("."))
   .settings(
-    name := "AuthService"
+    name := "Auth"
   )
-
-dockerBaseImage := "openjdk:jre"

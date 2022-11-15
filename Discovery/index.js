@@ -4,6 +4,8 @@ const database = require("./db");
 
 const GatewayService = require("./gwClient").GatewayService;
 
+const logger = require("./logger");
+
 const services = {
     gateway: [],
     auth: [],
@@ -63,7 +65,7 @@ discServer.bindAsync(
     `${hostname}:${port}`,
     grpc.ServerCredentials.createInsecure(),
     (error, port) => {
-        console.log("[ " + getCurrentTime() + " ]:\t" + `Server running at ${hostname}:${port}`);
+        logger.info(`Server running at ${hostname}:${port}`);
 
         discServer.start();
     }
@@ -84,6 +86,8 @@ function discover(serviceInfo, callback) {
 
     const service = serviceInfo.request;
 
+    service.hostname = serviceInfo.getPeer().split(":")[0];
+
     if (
         services.hasOwnProperty(service.type) &&
         !services[service.type].some((includedService) => {
@@ -97,8 +101,7 @@ function discover(serviceInfo, callback) {
 
             const result = await DBservices.insertOne(service);
 
-            console.log("[ " + getCurrentTime() + " ]:\t"
-            + `Service ${service.type}:${service.hostname}:${service.port} was added: ${result.acknowledged}`);
+            logger.info(`Service ${service.type}:${service.hostname}:${service.port} was added: ${result.acknowledged}`);
 
             if (service.type === 'cache' && services.cache.length) {
                 callback({message: "Cache service already exists, if it is down, wait a while and try reloading it again."});
@@ -113,7 +116,7 @@ function discover(serviceInfo, callback) {
             } else {
                 if (services.gateway.length && services.gateway[0]?.client) {
                     services.gateway[0].client.newService(serviceInfo.request, (error, result) => {
-                        if (error) console.error(error);
+                        if (error) logger.info(error);
                     });
                 }
             }
@@ -123,7 +126,7 @@ function discover(serviceInfo, callback) {
             callback(null, discResponse(service));
         })()
     } else {
-        console.log("[ " + getCurrentTime() + " ]:\tSuch service type does not exist, or this object already exists in the database!");
+        logger.info("Such service type does not exist, or this object already exists in the database!");
 
         callback(null, discResponse(service));
     }
@@ -137,8 +140,8 @@ function removeService(serviceInfo, callback) {
         const DBservices = database.collection('services');
     
         const result = await DBservices.deleteOne(service);
-    
-        console.log("[ " + getCurrentTime() + " ]:\t" + `Service was removed: ${result.acknowledged}`);
+
+        logger.info(`Service was removed: ${result.acknowledged}`);
     
         services[service.type] = services[service.type].filter((selectedService) => {
             return (selectedService.type != service.type && selectedService.hostname != service.hostname && selectedService != service.port);
@@ -147,10 +150,4 @@ function removeService(serviceInfo, callback) {
         callback(null, {});
     })()
 
-}
-
-function getCurrentTime() {
-    const now = new Date();
-
-    return now.getHours() + ":" + now.getMinutes() + ":" + now.getSeconds();
 }

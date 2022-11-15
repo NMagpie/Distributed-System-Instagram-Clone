@@ -2,13 +2,13 @@ package cacheManager
 
 import akka.actor.Actor
 import cacheManager.CacheManager.{Remove, profiles}
-import rpcImpl.RpcImpl.Profile
 import main.Main.system
 import main.Main.system.dispatcher
+import rpcImpl.RpcImpl.Profile
 
 import java.util.concurrent.ConcurrentHashMap
 import scala.collection.concurrent.Map
-import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.concurrent.duration.FiniteDuration
 import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 import scala.language.postfixOps
 
