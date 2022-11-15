@@ -11,6 +11,10 @@ trait LogHelper {
 
   System.setProperty("host", ConfigFactory.load.getString("hostname"))
 
+  System.setProperty("logHost", ConfigFactory.load.getString("logHost"))
+
+  System.setProperty("logPort", ConfigFactory.load.getString("logPort"))
+
   protected val logger: Logger = Logger(getClass)
 }
 

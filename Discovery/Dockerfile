@@ -14,10 +14,8 @@ RUN npm install
 
 COPY . .
 
-EXPOSE 9001
+EXPOSE 7999
 
-EXPOSE 9002
-
-#CMD [ "node", "index.js"]
+#CMD [ "npm", "run", "dockerRun"]
 
 CMD [ "node", "-r", "dotenv/config", ".", "dotenv_config_path=./.env.docker" ]

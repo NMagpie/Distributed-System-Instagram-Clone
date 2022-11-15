@@ -86,6 +86,8 @@ function discover(serviceInfo, callback) {
 
     const service = serviceInfo.request;
 
+    service.hostname = serviceInfo.getPeer().split(":")[0];
+
     if (
         services.hasOwnProperty(service.type) &&
         !services[service.type].some((includedService) => {

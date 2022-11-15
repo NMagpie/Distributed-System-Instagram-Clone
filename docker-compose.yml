@@ -1,0 +1,41 @@
+services:
+  discovery:
+    image: discovery:latest
+    ports:
+      - "7999"
+
+  gateway:
+    image: gateway:latest
+    depends_on:
+      - "discovery"
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    stdin_open: true
+    tty: true
+
+  cache:
+    image: cache:latest
+    depends_on:
+      - "gateway"
+    ports:
+      - "7998"
+    stdin_open: true
+    tty: true
+
+  post:
+    image: post:latest
+    depends_on:
+      - "cache"
+    ports:
+      - "9001:9001"
+      - "9002:9002"
+
+  auth:
+    image: auth:latest
+    depends_on:
+      - "post"
+    ports:
+      - "9005:9005"
+    stdin_open: true
+    tty: true

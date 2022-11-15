@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Configuration status="info" name="ti-analytics">
     <Appenders>
-        <Socket name="socket" host="localhost" port="9503">
+        <Socket name="socket" host="${sys:logHost}" port="${sys:logPort}">
             <JsonTemplateLayout eventTemplateUri="classpath:example.json">
                 <EventTemplateAdditionalField key="sType" value="${sys:sType}"/>
                 <EventTemplateAdditionalField key="hostname" value="${sys:host}"/>

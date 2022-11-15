@@ -4,21 +4,19 @@ import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.grpc.GrpcClientSettings
 import akka.http.scaladsl.Http
 import cacheManager.CacheManager
-import com.google.common.cache.{CacheBuilder, CacheLoader}
-import services.cache.CacheServiceHandler
-import main.Main.system.dispatcher
-
-import scala.io.StdIn
 import com.typesafe.config.ConfigFactory
-import services.discovery.{DiscoveryService, DiscoveryServiceClient}
-import services.ServiceInfo
+import main.Main.system.dispatcher
 import rpcImpl.RpcImpl
+import services.ServiceInfo
+import services.cache.CacheServiceHandler
+import services.discovery.{DiscoveryService, DiscoveryServiceClient}
 import taskLimiter.TlActor
 
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, DurationInt}
+import scala.io.StdIn
 import scala.language.postfixOps
 
 /*

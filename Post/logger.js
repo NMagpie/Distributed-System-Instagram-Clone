@@ -1,7 +1,7 @@
 var net = require('net');
 
-var logHost = 'localhost',
-    logPort = 9503;
+var logHost = process.env.LOGHOST,
+    logPort = process.env.LOGPORT;
 
 var conn = net.createConnection({host: logHost, port: logPort})
 .on('error', function(err) {
