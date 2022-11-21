@@ -4,7 +4,7 @@ import akka.actor.{Actor, Cancellable}
 import logging.LogHelper.logMessage
 import main.Main
 import main.Main.system.dispatcher
-import main.Main.{authServices, cacheService, postServices, system}
+import main.Main.{authServices, cacheServices, postServices, system}
 import services.ServiceManager._
 import services.Services.{AuthService, CacheService, PostService}
 
@@ -13,13 +13,13 @@ import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.language.postfixOps
 
 object ServiceManager {
-  case class GetAuth()
+  case class GetAuth(prepare: Boolean = false)
 
-  case class AuthResult(client: AuthService)
+  case class AuthResult(client: AuthService, id: Int = -1)
 
-  case class GetPost()
+  case class GetPost(prepare: Boolean = false)
 
-  case class PostResult(client: PostService)
+  case class PostResult(client: PostService, id: Int = -1)
 
   case class DecLoad(client: Either[AuthService, PostService])
 
@@ -38,6 +38,8 @@ class ServiceManager extends Actor {
 
   val errorLimit: Int = 10
 
+  var prepareId: Int = 0
+
   override def receive: Receive = {
 
     case GetAuth =>
@@ -48,11 +50,21 @@ class ServiceManager extends Actor {
       } else
         sender() ! AuthResult(null)
 
-    case GetPost =>
+    case GetAuth(prepare) =>
+      if (authServices.nonEmpty) {
+        val id = getId(prepare)
+        val client = authServices.minBy(_.load)
+        client.load = client.load + 1
+        sender() ! AuthResult(client, id)
+      } else
+        sender() ! AuthResult(null)
+
+    case GetPost(prepare) =>
       if (postServices.nonEmpty) {
+        val id = getId(prepare)
         val client = postServices.minBy(_.load)
         client.load = client.load + 1
-        sender() ! PostResult(client)
+        sender() ! PostResult(client, id)
       } else
         sender() ! AuthResult(null)
 
@@ -120,7 +132,7 @@ class ServiceManager extends Actor {
               service.errors = service.errors + 1
 
               if (service.errors >= errorLimit) {
-                cacheService = null
+                cacheServices = cacheServices.filter(aSerivce=> aSerivce.equals(service))
 
                 timer.cancel()
 
@@ -173,7 +185,7 @@ class ServiceManager extends Actor {
     case AddService(sType, hostname, port) =>
       sType match {
         case "cache" =>
-          cacheService = CacheService(sType, hostname, port)
+          cacheServices = cacheServices :+ CacheService(sType, hostname, port)
 
         case "auth" =>
           authServices = authServices :+ AuthService(sType, hostname, port)
@@ -183,6 +195,13 @@ class ServiceManager extends Actor {
 
       }
 
+  }
+
+  def getId(prepare: Boolean): Int = {
+    if (prepare) {
+      prepareId += 1
+      prepareId
+    } else -1
   }
 
 }
