@@ -13,13 +13,17 @@ import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.language.postfixOps
 
 object ServiceManager {
-  case class GetAuth(prepare: Boolean = false)
 
-  case class AuthResult(client: AuthService, id: Int = -1)
+  case class GetBoth()
 
-  case class GetPost(prepare: Boolean = false)
+  case class BothResult(aClient: AuthService, pClient: PostService, id: Int)
+  case class GetAuth()
 
-  case class PostResult(client: PostService, id: Int = -1)
+  case class AuthResult(client: AuthService)
+
+  case class GetPost()
+
+  case class PostResult(client: PostService)
 
   case class DecLoad(client: Either[AuthService, PostService])
 
@@ -42,29 +46,31 @@ class ServiceManager extends Actor {
 
   override def receive: Receive = {
 
+    case GetBoth =>
+      val aClient = authServices.minBy(_.load)
+      aClient.load = aClient.load + 1
+
+      val pClient = postServices.minBy(_.load)
+      pClient.load = pClient.load + 1
+
+      val id = getId()
+
+      sender() ! BothResult(aClient, pClient, id)
+
     case GetAuth =>
       if (authServices.nonEmpty) {
         val client = authServices.minBy(_.load)
         client.load = client.load + 1
         sender() ! AuthResult(client)
-      } else
+      } else {
         sender() ! AuthResult(null)
+      }
 
-    case GetAuth(prepare) =>
-      if (authServices.nonEmpty) {
-        val id = getId(prepare)
-        val client = authServices.minBy(_.load)
-        client.load = client.load + 1
-        sender() ! AuthResult(client, id)
-      } else
-        sender() ! AuthResult(null)
-
-    case GetPost(prepare) =>
+    case GetPost =>
       if (postServices.nonEmpty) {
-        val id = getId(prepare)
         val client = postServices.minBy(_.load)
         client.load = client.load + 1
-        sender() ! PostResult(client, id)
+        sender() ! PostResult(client)
       } else
         sender() ! AuthResult(null)
 
@@ -197,11 +203,9 @@ class ServiceManager extends Actor {
 
   }
 
-  def getId(prepare: Boolean): Int = {
-    if (prepare) {
+  def getId(): Int = {
       prepareId += 1
       prepareId
-    } else -1
   }
 
 }

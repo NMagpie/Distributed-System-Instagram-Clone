@@ -15,6 +15,10 @@ service PostService {
 
     rpc putProfile (ProfilePutInfo) returns (PutResult) {}
 
+    rpc rollback (Id) returns (Empty) {}
+
+    rpc commit (Id) returns (Empty) {}
+
     rpc putPicture (stream PictureInfo) returns (PutResult) {}
 }
 
@@ -47,6 +51,7 @@ message ProfilePutInfo {
     string username = 1;
     string name = 2;
     string avatar = 3;
+    int32 id = 4;
 }
 
 message PostPutInfo {

@@ -88,6 +88,10 @@ function discover(serviceInfo, callback) {
 
     service.hostname = serviceInfo.getPeer().split(":")[0];
 
+
+
+    if (service.hostname === "") service.hostname = "127.0.0.1"
+
     if (
         services.hasOwnProperty(service.type) &&
         !services[service.type].some((includedService) => {
