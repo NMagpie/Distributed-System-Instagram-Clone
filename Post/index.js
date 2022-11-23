@@ -36,7 +36,6 @@ const con = mysql.createConnection({
 con.connect(function(err) {
     if (err) throw err;
     logger.info("DB Connected!");
-    //console.log("[ " + getCurrentTime() + " ]: \tDB Connected!");
 });
 
 const grpc = require("@grpc/grpc-js");
@@ -64,6 +63,8 @@ postServer.addService(grpcObj.services.post.PostService.service, {
     putPost: taskLimiter(putPost, postServer),
     putProfile : taskLimiter(putProfile, postServer),
     putPicture: taskLimiter(putPicture, postServer),
+    commit: taskLimiter(commit, postServer),
+    rollback: taskLimiter(rollback, postServer),
 });
 
 postServer.bindAsync(
@@ -71,7 +72,6 @@ postServer.bindAsync(
     grpc.ServerCredentials.createInsecure(),
     (error, port) => {
         logger.info(`Server running at ${hostname}:${port}`);
-        //console.log("[ " + getCurrentTime() + " ]: \t" + `Server running at ${hostname}:${port}`);
         postServer.start();
     }
 );
@@ -79,7 +79,6 @@ postServer.bindAsync(
 (async function () {
     await discoveryClient.discover({type: "post", hostname: hostname, port: port}, (error, result) => {
         if (error) logger.info(error);
-        //console.error(error);
     })
 }());
 
@@ -105,7 +104,6 @@ function getProfile(username, callback) {
 
                 })
                 .catch(error => {
-                    //console.error(error);
                     logger.info(error);
                 });
 
@@ -130,7 +128,6 @@ function getPost(postParams, callback) {
 
             })
             .catch(error => {
-                //console.error(error);
                 logger.info(error);
             });
 
@@ -172,42 +169,78 @@ function putPost(postInfo, callback) {
                     callback( null, {success: true,})
                 })
             .catch(error => {
-                //console.error(error);
                 logger.info(error);
                 callback(null, {success: false, error: error});
             });
 
 }
 
+const cache = new Map();
+
 function putProfile(profileInfo, callback) {
 
-            const username = profileInfo.request.username;
-        
-            const name = profileInfo.request.name;
-        
-            const avatar = profileInfo.request.avatar;
+    cache.set(profileInfo.request.id, profileInfo.request);
 
-            logger.info(`{putProfile}\t${username}`);
-        
-            query(`INSERT INTO post_db.profiles (username, name, profilePicture) VALUES ('${username}', '${name}', '${avatar}')`)
-            .then((result) => {
-                if (result?.error)
-                    callback(null, {success: false, body: result.error});
-                else
-                    callback( null, {success: true,});
-                })
-            .catch(error => {
-                //console.error(error);
-                logger.info(error);
-                callback(null, {success: false, body: error});
-            });
+    const username = profileInfo.request.username;
+
+    logger.info(`{putProfile}\t${username}`);
+
+    query(`SELECT EXISTS(SELECT 1 FROM post_db.profiles WHERE username ='${username}') as result`)
+    .then((result) => {
+        if (result?.error)
+            return callback(null, {success: false, error: result.error});
+        if (result[0].result == 1)
+            return callback(null, {success: false, error: "User already exists."});
+        else
+            return callback( null, {success: true,});
+        })
+    .catch(error => {
+        logger.info(error);
+        callback(null, {success: false, body: error});
+    });
+
+}
+
+function commit(idRequest, callback) {
+
+    const profileInfo = cache.get(idRequest.request.id);
+
+    cache.delete(idRequest.request.id);
+
+    const username = profileInfo.username;
+
+    const name = profileInfo.name;
+
+    const avatar = profileInfo.avatar;
+
+    logger.info(`{commit}\t${idRequest.request.id}`);
+
+    query(`INSERT INTO post_db.profiles (username, name, profilePicture) VALUES ('${username}', '${name}', '${avatar}')`)
+    .then((result) => {
+        if (result?.error)
+            callback(null, {});
+        else
+            callback( null, {});
+        })
+    .catch(error => {
+        logger.info(error);
+        callback(null, {});
+    });
+}
+
+function rollback(idRequest, callback) {
+
+    logger.info(`{rollback}\t${idRequest.request.id}`);
+
+    cache.delete(idRequest.request.id);
+
+    callback( null, {} );
 
 }
 
 function putPicture(call, callback) {
 
     logger.info("{putPicture}");
-    //console.log("[ " + getCurrentTime() + " ]: {putPicture}");
 
     var pictureData = [];
 
@@ -230,7 +263,6 @@ function putPicture(call, callback) {
         fs.writeFile(`./public/images/${filename}`, combinedData, 'binary', (error) => {
 
             if (error) {
-                //console.log(error);
                 logger.info(error);
                 callback(null, {success: false, error: error});
                 return;

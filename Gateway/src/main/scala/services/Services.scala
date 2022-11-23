@@ -36,6 +36,7 @@ object Services {
                          )
 
   object CacheService {
+
     def apply(sType: String,
               hostname: String,
               port: Int): CacheService =

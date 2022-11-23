@@ -9,7 +9,11 @@ service AuthenticationService {
 
   rpc auth (UserData) returns (Result) {}
 
-  rpc register (UserData) returns (Result) {}
+  rpc register (RegisterData) returns (Result) {}
+
+  rpc rollback (Id) returns (Empty) {}
+
+  rpc commit (Id) returns (Result) {}
 
   rpc whoIsThis (AuthKey) returns (User) {}
 
@@ -26,6 +30,11 @@ message User {
 
 message AuthBool {
   bool auth = 1;
+}
+
+message RegisterData {
+  string encode = 1;
+  int32 id = 2;
 }
 
 message UserData {

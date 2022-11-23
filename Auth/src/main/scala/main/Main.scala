@@ -3,7 +3,8 @@ package main
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.grpc.GrpcClientSettings
 import akka.http.scaladsl.Http
-import services.authentication.AuthenticationServiceHandler
+import caching.CacheActor
+import services.authentication.{AuthenticationServiceHandler, RegisterData, UserData}
 import com.typesafe.config.ConfigFactory
 import db.DBConnector
 import logging.LogHelper.logMessage
@@ -32,6 +33,10 @@ object Main {
   implicit val system: ActorSystem = ActorSystem("my-system")
 
   val taskLimiter: ActorRef = system.actorOf(Props(new TlActor(15)), "taskLimiter")
+
+  val cacheActor: ActorRef = system.actorOf(Props[CacheActor], "cache")
+
+  var cache: Map[Int, RegisterData] = Map.empty
 
   val hostname: String = ConfigFactory.load.getString("hostname")
 

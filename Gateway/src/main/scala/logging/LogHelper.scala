@@ -1,8 +1,10 @@
 package logging
 
 import com.typesafe.config.ConfigFactory
-import main.Main.getCurrentTime
 import org.apache.logging.log4j.scala.Logger
+
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 trait LogHelper {
   System.setProperty("sType", "gateway")
@@ -15,19 +17,33 @@ trait LogHelper {
 
   System.setProperty("logPort", ConfigFactory.load.getString("logPort"))
 
-  protected val logger: Logger = Logger(getClass)
+  protected var logger: Logger = _
+
+  try {
+    logger = Logger(getClass)
+  } catch {
+    case e: Exception => e.printStackTrace()
+  }
+
 }
 
 object LogHelper extends LogHelper {
 
   def logMessage(message: String): Unit = {
     println(s"[$getCurrentTime]: " + message)
-    logger.info(message)
+    if (logger != null)
+      logger.info(message)
   }
 
   def logError(e: Throwable): Unit = {
     e.printStackTrace()
-    logger.error(e.getMessage)
+    if (logger != null)
+      logger.error(e.getMessage)
+  }
+
+  def getCurrentTime: String = {
+    val timestamp = LocalDateTime.now()
+    DateTimeFormatter.ofPattern("HH:mm:ss").format(timestamp)
   }
 
 }
