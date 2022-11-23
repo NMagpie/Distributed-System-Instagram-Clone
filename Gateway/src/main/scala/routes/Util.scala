@@ -5,6 +5,7 @@ import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import io.grpc.StatusRuntimeException
+import logging.LogHelper.logError
 import main.Main.system.dispatcher
 import main.Main.{authServices, cacheServices, postServices, serviceManager}
 import org.json4s.jackson.Serialization
@@ -27,20 +28,28 @@ object Util {
 
   implicit val formats: Formats = Serialization.formats(NoTypeHints) + FieldSerializer[GeneratedMessage]()
 
-  def response(reply: Future[GeneratedMessage]): Route = {
-    onComplete(reply) {
-      case Success(replyResult) =>
-        println("Reply sent")
+  def response[T <: scalapb.GeneratedMessage](reply: Either[Future[T], Throwable]): Route = {
+    reply match {
+      case Left(replyF) =>
+        onComplete(replyF) {
+          case Success(replyResult) =>
+            println("Reply sent")
 
-        val json = JsonFormat.toJsonString(replyResult)
+            val json = JsonFormat.toJsonString(replyResult)
 
-        complete(HttpEntity(ContentTypes.`application/json`, json))
+            complete(HttpEntity(ContentTypes.`application/json`, json))
 
-      case Failure(e) =>
-        if (e.getMessage == "UNKNOWN: 429 Too many requests")
-          complete(HttpResponse(429, entity = "Too many requests"))
-        else
-          e.printStackTrace()
+          case Failure(e) =>
+            if (e.getMessage == "UNKNOWN: 429 Too many requests")
+              complete(HttpResponse(429, entity = "Too many requests"))
+            else {
+              logError(e)
+              complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+            }
+        }
+
+      case Right(e) =>
+        logError(e)
         complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
     }
   }
@@ -50,15 +59,24 @@ object Util {
       if (service == null)
         return Future.failed(new Exception("No such service available, please try again later"))
 
-      code.map(_ => {
-        serviceManager ! OK(service)
-      }).failed.map {
-        case e: StatusRuntimeException =>
-          serviceManager ! Fail(service)
-          Future.failed(e)
+//      code.map(_ => {
+//        serviceManager ! OK(service)
+//      }).failed.map {
+//        case e: StatusRuntimeException =>
+//          serviceManager ! Fail(service)
+//          Future.failed(e)
+//      }
+
+      val outFuture = for {
+        c <- code
+      } yield c
+
+      outFuture.onComplete {
+        case Success(_) => serviceManager ! OK(service)
+        case Failure(_) => serviceManager ! Fail(service)
       }
 
-      code
+      outFuture
 
     } catch {
       case e: Exception => Future.failed(e)
@@ -90,6 +108,13 @@ object Util {
       case ".jpeg" => true
       case _ => false
     }
+  }
+
+  def decLoad(authService: AuthService = null, postService: PostService = null): Unit = {
+    if (authService != null)
+      serviceManager ! DecLoad(Left(authService))
+    if (postService != null)
+      serviceManager ! DecLoad(Right(postService))
   }
 
 }

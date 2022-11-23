@@ -6,7 +6,7 @@ import akka.http.scaladsl.server.Route
 import akka.pattern.ask
 import logging.LogHelper.{logError, logMessage}
 import main.Main.system.dispatcher
-import main.Main.{cacheServices, serviceManager, timeout}
+import main.Main.{cacheServices, postServices, serviceManager, timeout}
 import org.json4s.jackson.Serialization
 import services.ServiceManager._
 import services.cache._
@@ -56,7 +56,7 @@ object GetProfile {
                   postService.client.getProfile(Username(username))
                 })
 
-                serviceManager ! DecLoad(Right(postService))
+                decLoad(_, postService)
 
                 reply.onComplete {
                   case Success(replyResult) =>
@@ -68,16 +68,14 @@ object GetProfile {
                     })
                 }
 
-                response(reply)
+                response(Left(reply))
 
-              case Failure(e) => logError(e)
-                complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+              case Failure(e) => response(Right(e))
             }
 
           }
 
-        case Failure(e) => logError(e)
-          complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+        case Failure(e) => response(Right(e))
       }
 
   }

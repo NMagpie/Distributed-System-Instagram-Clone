@@ -1,10 +1,9 @@
 package routes
 
-import akka.http.scaladsl.model.{ContentTypes, HttpEntity}
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.pattern.ask
-import logging.LogHelper.{logError, logMessage}
+import logging.LogHelper.logMessage
 import main.Main.{serviceManager, timeout}
 import services.ServiceManager._
 import services.authentication._
@@ -35,12 +34,11 @@ object Login {
               authService.client.auth(UserData(authData))
             })
 
-            serviceManager ! DecLoad(Left(authService))
+            decLoad(authService)
 
-            response(reply)
+            response(Left(reply))
 
-          case Failure(e) => logError(e)
-            complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+          case Failure(e) => response(Right(e))
         }
 
     }

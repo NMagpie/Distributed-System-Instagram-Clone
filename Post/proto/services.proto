@@ -13,3 +13,7 @@ message ServiceInfo {
   string hostname = 2;
   int32 port = 3;
 }
+
+message Id {
+  int32 id = 1;
+}

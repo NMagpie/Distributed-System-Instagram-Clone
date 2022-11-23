@@ -6,7 +6,7 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.server.Directives._
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
-import logging.LogHelper.logMessage
+import logging.LogHelper.{logError, logMessage}
 import main.Main.system.dispatcher
 import org.json4s.jackson.Serialization
 import org.json4s.{FieldSerializer, Formats, NoTypeHints}
@@ -77,12 +77,14 @@ object Main {
 
       this.authServices = authServices
 
+      println(this.authServices.mkString("Array(", ", ", ")"))
+
       this.postServices = postServices
 
       this.cacheServices = cacheServices
 
     } catch {
-      case _: Exception =>
+      case e: Exception => logError(e)
     }
 
   val serviceManager: ActorRef = system.actorOf(Props(new ServiceManager()), "serviceManager")

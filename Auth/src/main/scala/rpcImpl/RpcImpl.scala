@@ -3,6 +3,7 @@ package rpcImpl
 import akka.grpc.GrpcServiceException
 import akka.pattern.ask
 import akka.util.Timeout
+import caching.CacheActor.{Put, Remove}
 import db.DBConnector.connection
 import io.grpc.{Status => grpcStatus}
 import logging.LogHelper.logMessage
@@ -10,7 +11,7 @@ import main.Main.system.dispatcher
 import services.authentication._
 import services.{Empty, Status}
 import taskLimiter.TlActor._
-import main.Main.taskLimiter
+import main.Main.{cache, cacheActor, taskLimiter}
 
 import java.nio.charset.StandardCharsets
 import java.util.Base64
@@ -82,7 +83,7 @@ class RpcImpl extends AuthenticationService {
       Future.failed(new GrpcServiceException(grpcStatus.UNKNOWN.withDescription("429 Too many requests")))
   }
 
-  override def register(in: UserData): Future[Result] = {
+  override def register(in: RegisterData): Future[Result] = {
 
     val future = taskLimiter ? TrySend
 
@@ -93,6 +94,9 @@ class RpcImpl extends AuthenticationService {
       logMessage(s"[${result.load} of ${result.limit}] {register}\t${in.encode}")
 
       val Array(username, password) = new String(Base64.getDecoder.decode(in.encode), StandardCharsets.UTF_8).split(":")
+
+      cacheActor ! Put(in)
+
       val statement = connection.createStatement
       val rs = statement.executeQuery("SELECT EXISTS(SELECT 1 FROM auth_db.users WHERE username ='%s')".format(username))
       var exists = false
@@ -101,17 +105,9 @@ class RpcImpl extends AuthenticationService {
 
       if (exists) {
         //println("User was found, cannot register!")
-        taskLimiter ! Free
         Future(Result(None, Option("User already exists!")))
       } else {
-        statement.execute("INSERT INTO `auth_db`.`users` (`username`, `password`) VALUES ('%s', '%s')".format(username, password))
-        val rs = statement.executeQuery("SELECT auth_db.users.key FROM auth_db.users WHERE username = '%s'".format(username))
-
-        rs.next
-        //println("User was not found, registering")
-
-        taskLimiter ! Free
-        Future(Result(Option(rs.getString("key")), None))
+        Future(Result(None, None))
       }
 
     } catch {
@@ -121,6 +117,37 @@ class RpcImpl extends AuthenticationService {
     } else
       Future.failed(new GrpcServiceException(grpcStatus.UNKNOWN.withDescription("429 Too many requests")))
 
+  }
+
+  override def commit(inId: Id): Future[Result] = {
+
+    logMessage(s"{commit}\t${inId.id}")
+
+    val in = cache(inId.id)
+
+    cacheActor ! Remove(in.id)
+
+    val Array(username, password) = new String(Base64.getDecoder.decode(in.encode), StandardCharsets.UTF_8).split(":")
+    val statement = connection.createStatement
+
+    statement.execute("INSERT INTO `auth_db`.`users` (`username`, `password`) VALUES ('%s', '%s')".format(username, password))
+    val rs = statement.executeQuery("SELECT auth_db.users.key FROM auth_db.users WHERE username = '%s'".format(username))
+
+    rs.next
+    //println("User was not found, registering")
+
+    taskLimiter ! Free
+    Future(Result(Option(rs.getString("key")), None))
+  }
+
+  override def rollback(in: Id): Future[Empty] = {
+
+    logMessage(s"{rollback}\t${in.id}")
+
+    cacheActor ! Remove(in.id)
+
+    taskLimiter ! Free
+    Future.successful(Empty())
   }
 
   override def getStatus(in: Empty): Future[Status] = {

@@ -38,9 +38,9 @@ object GetStatus {
 
             if (cacheServiceFiltered.nonEmpty) {
               val cacheService = cacheServiceFiltered(0)
-              response(call(cacheService, {
+              response(Left(call(cacheService, {
                 cacheService.client.getStatus(Empty())
-              }))
+              })))
             } else
               complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, "Such service does not exist"))
 
@@ -50,9 +50,9 @@ object GetStatus {
 
             if (authServiceFiltered.nonEmpty) {
               val authService = authServiceFiltered(0)
-              response(call(authService, {
+              response(Left(call(authService, {
                 authService.client.getStatus(Empty())
-              }))
+              })))
             } else
               complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, "Such service does not exist"))
 
@@ -62,16 +62,16 @@ object GetStatus {
 
             if (postServiceFiltered.nonEmpty) {
               val postService = postServiceFiltered(0)
-              response(call(postService, {
+              response(Left(call(postService, {
                 postService.client.getStatus(Empty())
-              }))
+              })))
             } else
               complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, "Such service does not exist"))
 
           case "discovery" =>
 
             if (sHostname == discoveryHost && intPort == discoveryPort)
-              response(discovery.getStatus(Empty()))
+              response(Left(discovery.getStatus(Empty())))
             else
               complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, "Such service does not exist"))
 

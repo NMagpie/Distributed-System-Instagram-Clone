@@ -1,18 +1,17 @@
 package routes
 
 import akka.NotUsed
-import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.pattern.ask
 import akka.stream.scaladsl.{Flow, Source}
 import akka.util.ByteString
-import logging.LogHelper.{logError, logMessage}
+import com.google.protobuf.{ByteString => pByteString}
+import logging.LogHelper.logMessage
 import main.Main.{serviceManager, timeout}
 import services.ServiceManager._
 import services.authentication.AuthKey
 import services.post.{PictureInfo, PostPutInfo}
-import com.google.protobuf.{ByteString => pByteString}
 
 import scala.language.postfixOps
 import scala.util.{Failure, Success}
@@ -81,31 +80,26 @@ object PutPost {
                                     postService.client.putPost(PostPutInfo(username, result.link.get, text))
                                   })
 
-                                  serviceManager ! DecLoad(Right(postService))
+                                  decLoad(_, postService)
 
-                                  response(reply)
+                                  response(Left(reply))
 
-                                case Failure(e) => logError(e)
-
-                                  serviceManager ! DecLoad(Right(postService))
-
-                                  complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+                                case Failure(e) =>
+                                  decLoad(_, postService)
+                                  response(Right(e))
                               }
 
-                            case Failure(e) => logError(e)
-                              complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+                            case Failure(e) => response(Right(e))
 
                           }
                       }
                   }
 
-                case Failure(e) => logError(e)
-                  complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+                case Failure(e) => response(Right(e))
 
               }
 
-            case Failure(e) => logError(e)
-              complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, e.getMessage))
+            case Failure(e) => response(Right(e))
 
           }
 
