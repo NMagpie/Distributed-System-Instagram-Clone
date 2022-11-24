@@ -4,9 +4,9 @@ import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.pattern.ask
-import logging.LogHelper.{logError, logMessage}
+import logging.LogHelper.logMessage
 import main.Main.system.dispatcher
-import main.Main.{cacheServices, postServices, serviceManager, timeout}
+import main.Main.{serviceManager, timeout}
 import org.json4s.jackson.Serialization
 import services.ServiceManager._
 import services.cache._
@@ -22,8 +22,10 @@ object GetProfile {
   val getProfile: Route = path("profile" / Segment) {
     username =>
 
-      val query = call(cacheServices(0), {
-        cacheServices(0).client.query(Query("get",
+      val cache = randomCache()
+
+      val query = call(cache, {
+        cache.client.query(Query("get",
           s"{\"what\": \"getProfile\"," +
             s" \"of\": \"$username\"}"))
       })
@@ -63,8 +65,8 @@ object GetProfile {
 
                     val postInfo = Profile(username, replyResult.name, replyResult.profilePicture, null)
 
-                    call(cacheServices(0), {
-                      cacheServices(0).client.query(Query("put", Serialization.write(postInfo)))
+                    call(cache, {
+                      cache.client.query(Query("put", Serialization.write(postInfo)))
                     })
                 }
 

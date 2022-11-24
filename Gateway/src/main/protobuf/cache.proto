@@ -8,6 +8,17 @@ service CacheService {
   rpc query (Query) returns (QueryResult) {}
 
   rpc getStatus (Empty) returns (Status) {}
+
+  rpc push (CMessage) returns (Empty) {}
+
+  rpc newService (ServiceInfo) returns (Empty) {}
+
+  rpc removeService (ServiceInfo) returns (Empty) {}
+}
+
+message CMessage {
+  string message = 1;
+  int64 time = 2;
 }
 
 message Query {

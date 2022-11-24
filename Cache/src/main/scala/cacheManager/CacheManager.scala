@@ -1,21 +1,23 @@
 package cacheManager
 
 import akka.actor.Actor
-import cacheManager.CacheManager.{Remove, profiles}
+import cacheManager.CacheManager.{Posts, Remove, posts, profiles}
 import main.Main.system
 import main.Main.system.dispatcher
-import rpcImpl.RpcImpl.Profile
+import rpcImpl.RpcImpl.{Post, Profile}
 
-import java.util.concurrent.ConcurrentHashMap
-import scala.collection.concurrent.Map
+import scala.collection.mutable.{Map => MMap}
 import scala.concurrent.duration.FiniteDuration
-import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 import scala.language.postfixOps
 
 object CacheManager {
   case class Remove(username: String)
 
-  val profiles: Map[String, Profile] = new ConcurrentHashMap[String, Profile]().asScala
+  case class Posts(posts: MMap[String, (Array[Post], Long)])
+
+  val profiles: MMap[String, Profile] = MMap[String, Profile]()
+
+  var posts: MMap[String, (Array[Post], Long)] = MMap[String, (Array[Post], Long)]()
 }
 
 class CacheManager(maxAge: FiniteDuration) extends Actor {
@@ -28,6 +30,9 @@ class CacheManager(maxAge: FiniteDuration) extends Actor {
     case p @ Profile(username, _, _, _) =>
       profiles.put(username , p)
       system.scheduler.scheduleOnce(maxAge, self, Remove(username))
+
+    case Posts(newPosts) =>
+      posts = newPosts ++ posts.map { case (k, v) => k -> newPosts.getOrElse(k, v) }
 
     case Remove(username) =>
       profiles.remove(username)

@@ -15,11 +15,14 @@ trait LogHelper {
 
   System.setProperty("logPort", ConfigFactory.load.getString("logPort"))
 
-  protected var logger: Logger = _
+  protected var logger : Logger = _
 
-    try {
+  protected val loggerConnected: Boolean = try {
     logger = Logger(getClass)
-  } catch { case e: Exception => e.printStackTrace()
+    true
+  } catch { case e: Exception =>
+    e.printStackTrace()
+    false
     }
 
 }
@@ -28,13 +31,13 @@ object LogHelper extends LogHelper {
 
   def logMessage(message: String): Unit = {
     println(s"[$getCurrentTime]: " + message)
-    if (logger != null)
+    if (loggerConnected)
       logger.info(message)
   }
 
   def logError(e: Throwable): Unit = {
     e.printStackTrace()
-    if (logger != null)
+    if (loggerConnected)
       logger.error(e.getMessage)
   }
 

@@ -36,6 +36,8 @@ dockerCommands ++= Seq(
   ExecCmd("RUN", "apk", "add", "bash")
 )
 
+//dockerEnvVars := Map( "EXT_PORT"->"`docker inspect -f \"{{(index (index .NetworkSettings.Ports \"9005/tcp\")0).HostPort}}\" cache1`" )
+
 dockerExposedPorts := {
   import com.typesafe.config.ConfigFactory
 

@@ -1,8 +1,10 @@
+version: '3.8'
+
 services:
   discovery:
     image: discovery:latest
     ports:
-      - "7999"
+      - "7999:7999"
 
   gateway:
     image: gateway:latest
@@ -19,7 +21,7 @@ services:
     depends_on:
       - "gateway"
     ports:
-      - "7998"
+      - "7998:7998"
     stdin_open: true
     tty: true
 

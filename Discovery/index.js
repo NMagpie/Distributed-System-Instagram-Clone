@@ -2,7 +2,9 @@ require('dotenv').config();
 
 const database = require("./db");
 
-const GatewayService = require("./gwClient").GatewayService;
+const GatewayService = require("./clients").GatewayService;
+
+const CacheService = require("./clients").CacheService;
 
 const logger = require("./logger");
 
@@ -76,19 +78,30 @@ function getStatus(empty, callback) {
 }
 
 const discResponse = (service) => {
-    if (service.type === "gateway") {
-        return services
-    } else 
-        return emptyServices
+    switch (service) {
+        case "gateway":
+            return services
+
+        case "cache":
+            return {
+                gateway: [],
+                auth: [],
+                cache: services.cache,
+                post: [],
+                discovery: null,
+            }
+
+        default:
+            return emptyServices
+    }
 }
 
 function discover(serviceInfo, callback) {
 
     const service = serviceInfo.request;
 
+    if (process.platform === "linux")
     service.hostname = serviceInfo.getPeer().split(":")[0];
-
-
 
     if (service.hostname === "") service.hostname = "127.0.0.1"
 
@@ -107,22 +120,30 @@ function discover(serviceInfo, callback) {
 
             logger.info(`Service ${service.type}:${service.hostname}:${service.port} was added: ${result.acknowledged}`);
 
-            if (service.type === 'cache' && services.cache.length) {
-                callback({message: "Cache service already exists, if it is down, wait a while and try reloading it again."});
-                return;
-            }
+            switch (service.type) {
+                case "gateway":
+                    service.client = new GatewayService(
+                        `${service.hostname}:${service.port}`,
+                        grpc.credentials.createInsecure()
+                    );
+                    break;
+                case "cache":
+                    service.client = new CacheService(
+                        `${service.hostname}:${service.port}`,
+                        grpc.credentials.createInsecure()
+                    );
 
-            if (service.type === "gateway") {
-                service.client = new GatewayService(
-                    `${service.hostname}:${service.port}`,
-                    grpc.credentials.createInsecure()
-                );
-            } else {
-                if (services.gateway.length && services.gateway[0]?.client) {
-                    services.gateway[0].client.newService(serviceInfo.request, (error, result) => {
+                    services.cache.forEach((cService => cService.client.newService(serviceInfo.request, (error, result) => {
                         if (error) logger.info(error);
-                    });
-                }
+                    })));
+
+                default:
+                    if (services.gateway.length && services.gateway[0]?.client) {
+
+                        services.gateway[0].client.newService(serviceInfo.request, (error, result) => {
+                            if (error) logger.info(error);
+                        });
+                    };
             }
 
             services[service.type].push(service);

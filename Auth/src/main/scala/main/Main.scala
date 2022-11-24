@@ -24,7 +24,7 @@ import scala.io.StdIn
 
   Authentication service
 
-  MADE BY: ДОДОН ИГОРЬ, ПАРЛАМЕНТУЛ РЕПУБЛИЧИЙ МОЛДОВА
+  MADE BY: SOROCHIN NICHITA, FAF-191
 
  */
 
