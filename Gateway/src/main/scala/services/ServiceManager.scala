@@ -145,6 +145,8 @@ class ServiceManager extends Actor {
                 timers.remove("cache" + service.hostname + service.port)
 
                 Main.discovery.removeService(ServiceInfo("cache", service.hostname, service.port))
+
+                cacheServices.foreach(cService => cService.client.removeService(ServiceInfo("cache", service.hostname, service.port)))
               }
           }
 

@@ -36,5 +36,9 @@
 
 # Script files
 
-removeServices.bat
+removeServices.sh
 runCompose.sh
+
+buildAll.sh
+
+getExtPort.sh

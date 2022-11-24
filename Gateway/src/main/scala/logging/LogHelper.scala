@@ -19,10 +19,13 @@ trait LogHelper {
 
   protected var logger: Logger = _
 
-  try {
+  protected val loggerConnected: Boolean = try {
     logger = Logger(getClass)
+    true
   } catch {
-    case e: Exception => e.printStackTrace()
+    case e: Exception =>
+      e.printStackTrace()
+      false
   }
 
 }
@@ -31,13 +34,13 @@ object LogHelper extends LogHelper {
 
   def logMessage(message: String): Unit = {
     println(s"[$getCurrentTime]: " + message)
-    if (logger != null)
+    if (loggerConnected)
       logger.info(message)
   }
 
   def logError(e: Throwable): Unit = {
     e.printStackTrace()
-    if (logger != null)
+    if (loggerConnected)
       logger.error(e.getMessage)
   }
 

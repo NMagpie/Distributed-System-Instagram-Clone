@@ -7,7 +7,9 @@ import cacheManager.CacheManager
 import com.typesafe.config.ConfigFactory
 import main.Main.system.dispatcher
 import rpcImpl.RpcImpl
-import services.ServiceInfo
+import services.ServiceManager.cacheServices
+import services.Services.CacheService
+import services.{ServiceInfo, ServiceManager}
 import services.cache.CacheServiceHandler
 import services.discovery.{DiscoveryService, DiscoveryServiceClient}
 import taskLimiter.TlActor
@@ -39,6 +41,8 @@ object Main {
 
   val cacheMng: ActorRef = system.actorOf(Props(new CacheManager(maxAge minutes)), "cacheManager")
 
+  val serviceMng: ActorRef = system.actorOf(Props[ServiceManager], "serviceManager")
+
   val hostname: String = ConfigFactory.load.getString("hostname")
 
   val port: Int = ConfigFactory.load.getInt("port")
@@ -51,7 +55,8 @@ object Main {
 
   val client: DiscoveryService = DiscoveryServiceClient(clientSettings)
 
-  Await.result(client.discover(ServiceInfo("cache", hostname, port)), Duration.create(15, "min"))
+  cacheServices = Await.result(client.discover(ServiceInfo("cache", hostname, port)), Duration.create(15, "min"))
+    .cache.map(service => CacheService(service.hostname, service.port)).toArray
 
   def main(args: Array[String]): Unit = {
 

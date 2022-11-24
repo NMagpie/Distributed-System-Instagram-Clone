@@ -3,14 +3,17 @@ package rpcImpl
 import akka.grpc.GrpcServiceException
 import akka.util.Timeout
 import cacheManager.CacheManager
+import cacheManager.CacheManager.Posts
 import io.grpc.{Status => grpcStatus}
 import main.Main.system.dispatcher
 import services.cache._
-import services.{Empty, Status}
+import services.{Empty, ServiceInfo, Status}
 import taskLimiter.TlActor._
-import main.Main.{cacheMng, getCurrentTime, taskLimiter}
+import main.Main.{cacheMng, getCurrentTime, hostname, port, serviceMng, taskLimiter}
+import org.json4s.jackson.JsonMethods._
 import org.json4s.native.Serialization.{read, write}
 import org.json4s.{Formats, NoTypeHints, jackson}
+import services.ServiceManager.{AddService, RemoveService, cacheServices}
 
 import scala.collection.mutable.{Map => MMap}
 import scala.concurrent.duration.DurationInt
@@ -23,7 +26,7 @@ object RpcImpl {
 
   case class Post(photo: String, text: String)
 
-  case class Profile(username: String, name: String, profilePicture: String, posts: MMap[String, Array[Post]])
+  case class Profile(username: String, name: String, profilePicture: String, timestamp: Long)
 
   case class ProfileInfo(username: String, name: String, profilePicture: String)
 }
@@ -56,14 +59,15 @@ class RpcImpl extends CacheService {
           case "get" => {
             val query = read[Get](in.message)
 
-              val profile = CacheManager.profiles.getOrElse(query.of, null)
-
-              if (profile == null) {
-                taskLimiter ! Free
-                Future.successful(QueryResult("null"))
-              } else {
                 query.what match {
                   case "getProfile" =>
+                    val profile = CacheManager.profiles.getOrElse(query.of, null)
+
+                    if (profile == null) {
+                      taskLimiter ! Free
+                      return Future.successful(QueryResult("null"))
+                    }
+
                     val profileInfo = if (profile.name == null) "null" else write(ProfileInfo(profile.username, profile.name, profile.profilePicture))
 
                     taskLimiter ! Free
@@ -71,7 +75,7 @@ class RpcImpl extends CacheService {
 
                   case "getPost" =>
 
-                    val dozenPosts = profile.posts.getOrElse(query.dozen.get, Array.empty)
+                    val dozenPosts = CacheManager.posts.getOrElse(query.of+"-"+query.dozen.get, (Array.empty[Post], 0))._1
 
                     val posts = if (dozenPosts.isEmpty) "null" else write(dozenPosts)
 
@@ -82,36 +86,51 @@ class RpcImpl extends CacheService {
                     taskLimiter ! Free
                     Future.failed(new GrpcServiceException(grpcStatus.UNKNOWN.withDescription("Unknown method")))
                 }
-              }
 
           }
 
           case "put" => {
 
-            val oldQuery = read[Profile](in.message)
+            val timestamp = System.currentTimeMillis()
 
-            val query = oldQuery.copy(posts = MMap[String, Array[Post]]())
+            //val query = read[Profile](in.message)
 
-            val profile = CacheManager.profiles.getOrElse(query.username, null)
+            //val query = oldQuery.copy(posts = MMap[String, (Array[Post], Long)]())
+
+            val json = parse(in.message)
+
+            val username = (json \ "username").extract[String]
+
+            val name = (json \ "name").extract[String]
+
+            val profilePicture = (json \ "profilePicture").extract[String]
+
+            val posts = (json \ "posts").extract[MMap[String, Array[Post]]].map({ case (k, v) => username+"-"+k -> (v, timestamp) })
+
+            val profile = CacheManager.profiles.getOrElse(username, null)
 
             if (profile == null) {
-              cacheMng ! query
-              //profiles.put(query.username, query)
+              cacheMng ! Profile(username, name, profilePicture, timestamp)
+
+              if (posts.nonEmpty)
+                cacheMng ! Posts(posts)
+
+              cacheServices.foreach(service => service.client.push(CMessage(in.message, timestamp)))
             } else {
-              val username = if (query.username != null) query.username else profile.username
-              val name = if (query.name != null) query.name else profile.name
-              val profilePicture = if (query.profilePicture != null) query.profilePicture else profile.profilePicture
 
-              val mergedMap =
-                if (query.posts.nonEmpty)
-                  query.posts ++ profile.posts.map { case (k, v) => k -> query.posts.getOrElse(k, v) }
-                else
-                  profile.posts
+              val mUsername = if (username != null) username else profile.username
+              val mName = if (name != null) name else profile.name
+              val mProfilePicture = if (profilePicture != null) profilePicture else profile.profilePicture
 
-              val updatedProfile = Profile(username, name, profilePicture, mergedMap)
+              val updatedProfile = Profile(mUsername, mName, mProfilePicture, timestamp)
 
               cacheMng ! updatedProfile
-              //profiles.put(username, updatedProfile)
+
+              if (posts.nonEmpty)
+                cacheMng ! Posts(posts)
+
+              cacheServices.foreach(service => service.client.push(CMessage(in.message, timestamp)))
+
             }
 
             taskLimiter ! Free
@@ -133,6 +152,67 @@ class RpcImpl extends CacheService {
       taskLimiter ! Free
       Future.failed(new GrpcServiceException(grpcStatus.UNKNOWN.withDescription("429 Too many requests")))
     }
+  }
+
+  def newService(in: ServiceInfo): scala.concurrent.Future[services.Empty] = {
+    println(s"[$getCurrentTime]: {newService}\t${in.hostname}\t${in.port}")
+    if (in.port != port)
+      serviceMng ! AddService(in.hostname, in.port)
+    Future.successful(Empty())
+  }
+
+  def removeService(in: ServiceInfo): scala.concurrent.Future[services.Empty] = {
+    println(s"[$getCurrentTime]: {removeService}\t${in.hostname}\t${in.port}")
+    if (in.port != port)
+      serviceMng ! RemoveService(in.hostname, in.port)
+    Future.successful(Empty())
+  }
+
+  def push(in: CMessage): scala.concurrent.Future[services.Empty] = {
+
+    val timestamp = in.time
+
+    val json = parse(in.message)
+
+    val username = (json \ "username").extract[String]
+
+    val name = (json \ "name").extract[String]
+
+    val profilePicture = (json \ "profilePicture").extract[String]
+
+    val posts = (json \ "posts").extract[MMap[String, Array[Post]]].map({ case (k, v) => username + "-" + k -> (v, timestamp) })
+
+    val profile = CacheManager.profiles.getOrElse(username, null)
+
+    println(s"[$getCurrentTime]: {push} $username")
+
+    if (profile == null) {
+      cacheMng ! Profile(username, name, profilePicture, timestamp)
+
+      if (posts.nonEmpty)
+        cacheMng ! Posts(posts)
+    } else {
+
+      if (profile.timestamp > timestamp)
+        return Future.successful(Empty())
+
+      val mUsername = if (username != null) username else profile.username
+      val mName = if (name != null) name else profile.name
+      val mProfilePicture = if (profilePicture != null) profilePicture else profile.profilePicture
+
+      val updatedProfile = Profile(mUsername, mName, mProfilePicture, timestamp)
+
+      cacheMng ! updatedProfile
+
+      //cacheServices.foreach(service => service.client.push(CMessage(in.message, timestamp)))
+
+      if (posts.nonEmpty)
+        cacheMng ! Posts(posts)
+
+    }
+
+    taskLimiter ! Free
+    Future.successful(Empty())
   }
 
   override def getStatus(in: Empty): Future[Status] = {

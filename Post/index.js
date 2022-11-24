@@ -88,10 +88,6 @@ function getProfile(username, callback) {
 
             logger.info(`{getProfile}\t${username}`);
 
-            //example if service is sending the result for too long
-
-            //new Promise(resolve => setTimeout(resolve, 1_000)).then(() => {
-
                 query(`(SELECT username, name, profilePicture FROM post_db.profiles WHERE username = \'${profUsername}\') UNION ALL SELECT NULL, NULL, NULL LIMIT 1`)
                 .then((result, _) => {
 
@@ -106,8 +102,6 @@ function getProfile(username, callback) {
                 .catch(error => {
                     logger.info(error);
                 });
-
-            //})
 }
 
 function getPost(postParams, callback) {
@@ -135,10 +129,6 @@ function getPost(postParams, callback) {
 
 function getStatus(empty, callback) {
 
-            //example if service is sending the result for too long
-
-            //new Promise(resolve => setTimeout(resolve, 1_500)).then(() => {
-
             logger.info("{getStatus}");
 
             const status = {
@@ -146,8 +136,6 @@ function getStatus(empty, callback) {
             };
 
             callback(null, status);
-
-            //})
 
 }
 

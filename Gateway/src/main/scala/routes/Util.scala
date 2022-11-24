@@ -18,7 +18,7 @@ import services.post.PostInfo
 
 import scala.concurrent.Future
 import scala.language.postfixOps
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Random, Success}
 
 object Util {
 
@@ -27,6 +27,10 @@ object Util {
   implicit val system: ActorSystem = ActorSystem("my-system")
 
   implicit val formats: Formats = Serialization.formats(NoTypeHints) + FieldSerializer[GeneratedMessage]()
+
+  private val random = new Random
+
+  def randomCache() : CacheService = cacheServices(random.nextInt(cacheServices.length))
 
   def response[T <: scalapb.GeneratedMessage](reply: Either[Future[T], Throwable]): Route = {
     reply match {
@@ -58,14 +62,6 @@ object Util {
     try {
       if (service == null)
         return Future.failed(new Exception("No such service available, please try again later"))
-
-//      code.map(_ => {
-//        serviceManager ! OK(service)
-//      }).failed.map {
-//        case e: StatusRuntimeException =>
-//          serviceManager ! Fail(service)
-//          Future.failed(e)
-//      }
 
       val outFuture = for {
         c <- code

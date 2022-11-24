@@ -77,8 +77,6 @@ object Main {
 
       this.authServices = authServices
 
-      println(this.authServices.mkString("Array(", ", ", ")"))
-
       this.postServices = postServices
 
       this.cacheServices = cacheServices
