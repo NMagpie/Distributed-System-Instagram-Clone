@@ -6,11 +6,11 @@
 
 - [Description](#description)
 - [Main Components](#main-components)
-    * [Gateway API](#gateway-api-scala-+-akka)
+    * [Gateway API](#gateway-api-scala--akka)
     - [Discovery Service](#discovery-service-nodejs)
-    - [Authentication Service](#authentication-service-scala-+-akka)
+    - [Authentication Service](#authentication-service-scala--akka)
     - [Post Service](#post-service-nodejs)
-    - [Cache](#cache-scala-+-akka)
+    - [Cache](#cache-scala--akka)
 - [Docker](#docker)
 - [System Diagram](#system-diagram)
 - [Used Technologies](#used-technologies)
@@ -19,9 +19,10 @@
 
 Microservice system designed as Instagram Clone. The primary interaction with client happens through the Gateway API, which has several REST API endpoints, communication between services is implemented using gRPC.
 
-The system does now have security at all, during the developement there was scope to study about `Distibutes Sytems` and their common techniques and traits.
+The system does now have security at all, during the developement there was scope to study about 
+`Distibuted Sytems` and their common techniques and traits.
 
-All the diagrams are located in folder `docs`.
+All the diagrams are located in `docs` folder.
 
 # Main Components
 
@@ -33,7 +34,7 @@ The server, which is a bridge during users and microservices interaction. Forwar
 
 Gateway Service has several REST endpoints:
 
-> ## All the request templates are located in `Microservice.postman_collection.json`, which you can import to you Postman App.
+> ### All the request templates are located in `Microservice.postman_collection.json`, which you can import to you Postman App.
 
 - ## `POST /status`:
 
@@ -47,7 +48,7 @@ And then looks for the service in the system. If the service was found - sends i
 
 Maybe later changed to GET request since its nature, just to transform received data template.
 
-> **Notice:** to receive Gateway Status, you need to put its gRPC port, not HTTP one!
+> **❗ Notice:** to receive Gateway Status, you need to put its gRPC port, not HTTP one!
 
 - ## `GET /profile/%username%`:
 
@@ -109,19 +110,19 @@ Receives one mandatory header `Key` which is the hash key received by requesting
 
 In the Gateway there was developed additional features:
 
-### ⬜ **Cicruit Breaker**
+### ⭐ **Cicruit Breaker**
 
 If Gateway sends RPC call and Service does not respond the Gateway increments number of errror attached to this service. If the number of errors exceeds the limit - the service will be removed from the whole system until it will not send `Discover` call to the Discovery Service.
 
-### ⬜ **Load Balancer**
+### ⭐ **Load Balancer**
 
 When Gateway sends RPC call to the Service, it inceases `load` value attached to the service. After receiving respone or exception from the service call, the load of the service will be decreased. If there are several instances of one service type, the Gateway will make RPC call to the least loaded service.
 
-### ⬜ **ELK Stack**
+### ⭐ **ELK Stack**
 
 All the log data can be transmitted by TCP using log4j to Filebeat and used by ElasticSearch and Kibana. More information about ELK stack can be found [here](https://www.elastic.co/what-is/elk-stack).
 
-### ⬜ **2 Phase Commit**
+### ⭐ **2 Phase Commit**
 
 2 Phase Commit is used for the Registration route, because during this request both Authentication and Post services are used. So if one of them does not respond or denies request, whole request will be denied. More information about 2 Phase Commit and other Distributed Transaction Patterns can be found [here](https://developers.redhat.com/blog/2018/10/01/patterns-for-distributed-transactions-within-a-microservices-architecture).
 
@@ -154,7 +155,7 @@ The service used to process and save all the Profile/Post data of the users. The
 
 The services used to temporary contain data, which is often requeted from the Post service.
 
-### ⬜ **Cache Replication**
+### ⭐ **Cache Replication**
 
 The system support Leaderless Cache Replication System in order to distribute the workload to several Cache instances. When one instance of the cache receives data from the Gateway, it creates timestamp for this information, saves both information and timestamp, and after sends it the all other instances of the cache. If the instance of the cache receives the data from the other cahce, it checks if it already has such information, and if it has the least recent version, it ignores the data, otherwise saves it.
 
@@ -170,7 +171,7 @@ After creating the images of all services, you have to run Docker Compose, which
 
 Both scripts are located in general folder.
 
-> **IMPORTANT:** All the Config Files for dockerization are ready to run using Docker Compose, if you want to run the services separately without it, you should edit those Config Files.
+> **❗ IMPORTANT:** All the Config Files for dockerization are ready to run using Docker Compose, if you want to run the services separately without it, you should edit those Config Files.
 
 # System Diagram
 
