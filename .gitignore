@@ -37,8 +37,3 @@
 # Script files
 
 removeServices.sh
-runCompose.sh
-
-buildAll.sh
-
-getExtPort.sh
