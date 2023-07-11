@@ -1,6 +1,4 @@
- # PAD Lab: Web Proxy & Logically Linked DBs
-
-## Made by: Sorochin Nichita, FAF-191
+ # Distributed System: Intagram Clone
 
 ### Navigation
 
